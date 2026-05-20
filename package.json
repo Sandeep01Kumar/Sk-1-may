@@ -46,6 +46,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
     "@vitest/coverage-v8": "4.1.6",
+    "@vitest/ui": "4.1.6",
     "axe-core": "4.11.4",
     "cross-env": "10.1.0",
     "eslint": "10.4.0",
