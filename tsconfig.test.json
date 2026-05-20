@@ -1,27 +1,24 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "noEmit": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"],
-      "@tests/*": ["tests/*"]
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "types": ["vitest/globals", "@testing-library/jest-dom", "@playwright/test", "node"],
+        "paths": {
+            "@/*": ["./src/*"],
+            "@tests/*": ["./tests/*"]
+        },
+        "noEmit": true,
+        "isolatedModules": true,
+        "allowJs": false,
+        "ignoreDeprecations": "6.0"
     },
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom", "vite/client"],
-    "ignoreDeprecations": "6.0"
-  },
-  "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "src/**/*.d.ts",
-    "tests/**/*.ts",
-    "tests/**/*.tsx",
-    "tests/**/*.d.ts",
-    "vitest.config.ts",
-    "playwright.config.ts",
-    "vite.config.ts"
-  ],
-  "exclude": ["node_modules", "dist", "coverage", "playwright-report", "test-results"]
+    "include": [
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "tests/**/*.ts",
+        "tests/**/*.tsx",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "playwright.config.ts"
+    ],
+    "exclude": ["node_modules", "dist", "coverage", "playwright-report", "test-results"]
 }
