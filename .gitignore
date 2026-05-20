@@ -1,39 +1,94 @@
+# =============================================================================
 # Dependencies
+# =============================================================================
 node_modules/
+.pnp
+.pnp.js
+.pnpm-store/
+.yarn/cache
+.yarn/install-state.gz
 
-# Build output
+# =============================================================================
+# Build & bundler outputs
+# =============================================================================
 dist/
 build/
 .vite/
+.cache/
+*.tsbuildinfo
 
-# Test artefacts
+# =============================================================================
+# Test outputs (Vitest + Playwright)
+# =============================================================================
 coverage/
-playwright-report/
+coverage-final.json
 test-results/
+playwright-report/
 playwright/.cache/
 
-# Local development environment files (committed lockfile only)
-.env
-.env.local
-.env.*.local
+# Playwright snapshot diffs (failures are uploaded as CI artefacts; not committed)
+**/__snapshots__/**/*-actual.png
+**/__snapshots__/**/*-diff.png
+**/*-snapshots/**/*-actual.png
+**/*-snapshots/**/*-diff.png
 
-# Editor / OS artefacts
-.DS_Store
-Thumbs.db
-.idea/
+# =============================================================================
+# Environment variables & secrets
+# =============================================================================
+.env
+.env.*
+!.env.example
+.envrc
+
+# Percy token (cloud visual regression - optional per AAP Section 0.6.1)
+.percy.yaml
+.percy.json
+percy.token
+
+# =============================================================================
+# IDE / Editor state
+# =============================================================================
 .vscode/
+!.vscode/settings.json.example
+.idea/
 *.swp
 *.swo
+*.swn
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Log files
+# =============================================================================
+# Logs
+# =============================================================================
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+.npm/
 
-# Vitest snapshot updates and on-disk caches (not the baseline screenshots)
-**/__snapshots__/__diff_output__/
+# =============================================================================
+# OS-generated files
+# =============================================================================
+*.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
 
-# Storybook (deferred per AAP Section 0.6.1; not in scope)
+# =============================================================================
+# Temp files
+# =============================================================================
+*.tmp
+*.temp
+.tmp/
+
+# =============================================================================
+# Storybook outputs (optional per AAP Section 0.6.1)
+# =============================================================================
 storybook-static/
+chromatic-build/
+chromatic.log
