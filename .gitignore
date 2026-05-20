@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.vite/
+
+# Test artefacts
+coverage/
+playwright-report/
+test-results/
+playwright/.cache/
+
+# Local development environment files (committed lockfile only)
+.env
+.env.local
+.env.*.local
+
+# Editor / OS artefacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Vitest snapshot updates and on-disk caches (not the baseline screenshots)
+**/__snapshots__/__diff_output__/
+
+# Storybook (deferred per AAP Section 0.6.1; not in scope)
+storybook-static/

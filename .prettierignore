@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.vite/
+package-lock.json
+# Frozen artifacts per the "Do not touch!" directive in README.md.
+server.js
+README.md
+# Visual baselines are byte-identical to the Figma renderings.
+tests/visual/baselines/**
