@@ -91,6 +91,28 @@ const TABLET_VIEWPORT = { width: 768, height: 1024 } as const;
 const MOBILE_VIEWPORT = { width: 375, height: 812 } as const;
 
 // ---------------------------------------------------------------------------
+// Visual baseline directories (AAP Section 0.5.1)
+// ---------------------------------------------------------------------------
+//
+// Authoritative on-disk locations for the visual-regression baselines.
+// The committed Figma renderings live under `tests/visual/baselines/desktop/`
+// today (eight PNGs); tablet and mobile directories will be populated on
+// first run per AAP Section 0.10.5 once the SSO components are authored.
+//
+// Each Playwright project assigns one of these constants as its
+// per-project `snapshotDir`. The top-level `snapshotPathTemplate` then
+// resolves `{snapshotDir}` to the project-specific value, ensuring all
+// three browsers at the same viewport share a single canonical baseline
+// (Figma delivers only one rendering per viewport).
+//
+// Paths are repository-root-relative; Playwright resolves them against
+// `testDir`'s parent (the repo root) at runtime.
+
+const DESKTOP_BASELINE_DIR = 'tests/visual/baselines/desktop';
+const TABLET_BASELINE_DIR = 'tests/visual/baselines/tablet';
+const MOBILE_BASELINE_DIR = 'tests/visual/baselines/mobile';
+
+// ---------------------------------------------------------------------------
 // Default export — the Playwright `PlaywrightTestConfig` object.
 // ---------------------------------------------------------------------------
 
@@ -116,6 +138,53 @@ export default defineConfig({
     // Per-test timeout — generous enough for first-paint + OAuth modal
     // flows on slow CI runners but tight enough to surface deadlocks.
     timeout: 60_000,
+
+    // -----------------------------------------------------------------------
+    // Snapshot path resolution (AAP Section 0.5.1 + 0.7.3)
+    // -----------------------------------------------------------------------
+    //
+    // Maps `expect(page).toHaveScreenshot('signin-a-microsoft-only.png')`
+    // to a file on disk at `tests/visual/baselines/{viewport}/signin-a-microsoft-only.png`.
+    //
+    // Why `{snapshotDir}/{arg}{ext}` (and not `{projectName}` or
+    // `{platform}`):
+    //
+    //   - The Figma file (`2qR7NSTmQLynkmlj9B4ltc`) delivers one PNG per
+    //     screen at one resolution — desktop. All three browsers running
+    //     at the desktop viewport must compare against that single
+    //     authoritative baseline; introducing per-browser baselines
+    //     would silently mask cross-browser regressions because each
+    //     engine's first capture would become its own ground truth.
+    //
+    //   - Playwright's default template is
+    //     `{testFileDir}/{testFileName}-snapshots/{arg}-{projectName}{ext}`,
+    //     which would orphan the committed `tests/visual/baselines/desktop/*.png`
+    //     files (Issue 3 in the I1 QA report). Pointing the template at
+    //     `{snapshotDir}` lets every project name its own baseline root
+    //     via the per-project `snapshotDir` declaration, decoupling the
+    //     storage layout from the project-name string.
+    //
+    //   - `{arg}` is the bare filename argument passed to
+    //     `toHaveScreenshot(...)` (e.g. `'signin-a-microsoft-only'`),
+    //     and `{ext}` is the file extension with its leading dot
+    //     (`.png`). Together they reproduce the canonical filename the
+    //     baseline was committed under.
+    //
+    // The companion per-project `snapshotDir` declarations (in
+    // `projects[]` below) supply the `{snapshotDir}` value:
+    //
+    //   chromium-desktop ─┐
+    //   firefox-desktop  ─┼─→ tests/visual/baselines/desktop/{arg}{ext}
+    //   webkit-desktop   ─┘
+    //
+    //   chromium-tablet  ─┐
+    //   firefox-tablet   ─┼─→ tests/visual/baselines/tablet/{arg}{ext}
+    //   webkit-tablet    ─┘
+    //
+    //   chromium-mobile  ─┐
+    //   firefox-mobile   ─┼─→ tests/visual/baselines/mobile/{arg}{ext}
+    //   webkit-mobile    ─┘
+    snapshotPathTemplate: '{snapshotDir}/{arg}{ext}',
 
     // -----------------------------------------------------------------------
     // Assertion / matcher configuration
@@ -275,8 +344,15 @@ export default defineConfig({
     // treats as "0 tests" (a silent pass).
     projects: [
         // --- Chromium × {desktop, tablet, mobile} ----------------------------
+        //
+        // Each project sets `snapshotDir` to the viewport-specific baseline
+        // directory. Combined with the top-level
+        // `snapshotPathTemplate: '{snapshotDir}/{arg}{ext}'`, this makes
+        // every Chromium/Firefox/WebKit project at a given viewport compare
+        // against the single Figma-sourced baseline for that viewport.
         {
             name: 'chromium-desktop',
+            snapshotDir: DESKTOP_BASELINE_DIR,
             use: {
                 ...devices['Desktop Chrome'],
                 viewport: DESKTOP_VIEWPORT,
@@ -284,6 +360,7 @@ export default defineConfig({
         },
         {
             name: 'chromium-tablet',
+            snapshotDir: TABLET_BASELINE_DIR,
             use: {
                 ...devices['Desktop Chrome'],
                 viewport: TABLET_VIEWPORT,
@@ -299,6 +376,7 @@ export default defineConfig({
             // https://playwright.dev/docs/emulation#ismobile) so the
             // mobile variant is omitted from the Firefox projects.
             name: 'chromium-mobile',
+            snapshotDir: MOBILE_BASELINE_DIR,
             use: {
                 ...devices['Desktop Chrome'],
                 viewport: MOBILE_VIEWPORT,
@@ -310,6 +388,7 @@ export default defineConfig({
         // --- Firefox × {desktop, tablet, mobile} -----------------------------
         {
             name: 'firefox-desktop',
+            snapshotDir: DESKTOP_BASELINE_DIR,
             use: {
                 ...devices['Desktop Firefox'],
                 viewport: DESKTOP_VIEWPORT,
@@ -317,6 +396,7 @@ export default defineConfig({
         },
         {
             name: 'firefox-tablet',
+            snapshotDir: TABLET_BASELINE_DIR,
             use: {
                 ...devices['Desktop Firefox'],
                 viewport: TABLET_VIEWPORT,
@@ -324,6 +404,7 @@ export default defineConfig({
         },
         {
             name: 'firefox-mobile',
+            snapshotDir: MOBILE_BASELINE_DIR,
             use: {
                 ...devices['Desktop Firefox'],
                 viewport: MOBILE_VIEWPORT,
@@ -333,6 +414,7 @@ export default defineConfig({
         // --- WebKit × {desktop, tablet, mobile} ------------------------------
         {
             name: 'webkit-desktop',
+            snapshotDir: DESKTOP_BASELINE_DIR,
             use: {
                 ...devices['Desktop Safari'],
                 viewport: DESKTOP_VIEWPORT,
@@ -340,6 +422,7 @@ export default defineConfig({
         },
         {
             name: 'webkit-tablet',
+            snapshotDir: TABLET_BASELINE_DIR,
             use: {
                 ...devices['Desktop Safari'],
                 viewport: TABLET_VIEWPORT,
@@ -347,6 +430,7 @@ export default defineConfig({
         },
         {
             name: 'webkit-mobile',
+            snapshotDir: MOBILE_BASELINE_DIR,
             use: {
                 ...devices['Desktop Safari'],
                 viewport: MOBILE_VIEWPORT,

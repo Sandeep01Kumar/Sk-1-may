@@ -27,10 +27,28 @@ playwright-report/
 playwright/.cache/
 
 # Playwright snapshot diffs (failures are uploaded as CI artefacts; not committed)
+#
+# Two layers of patterns:
+#
+#   1. Scoped patterns target Playwright's default snapshot output paths
+#      (`<spec>-snapshots/<name>-actual.png` and `__snapshots__/*-actual.png`
+#      legacy directory). These are the canonical locations Playwright
+#      writes failure artefacts to when `toHaveScreenshot()` mismatches
+#      a baseline.
+#
+#   2. Unscoped `*-actual.png` and `*-diff.png` provide belt-and-suspenders
+#      coverage for any failure artefact written outside the snapshot dirs
+#      (e.g. an experimental visual diff tool that writes alongside its
+#      input). The committed Figma baselines under
+#      `tests/visual/baselines/{desktop,tablet,mobile}/` use canonical
+#      names like `signin-a-microsoft-only.png` (no `-actual` or `-diff`
+#      suffix) so the unscoped patterns cannot accidentally exclude them.
 **/__snapshots__/**/*-actual.png
 **/__snapshots__/**/*-diff.png
 **/*-snapshots/**/*-actual.png
 **/*-snapshots/**/*-diff.png
+*-actual.png
+*-diff.png
 
 # =============================================================================
 # Environment variables & secrets
