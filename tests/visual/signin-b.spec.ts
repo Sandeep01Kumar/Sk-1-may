@@ -31,6 +31,9 @@
  *   - AAP Section 0.7.3 — Visual regression ≤ 0.1% mismatch gate.
  *   - AAP Section 0.9.1 — `test:visual` script body uses `--grep @visual`.
  *   - AAP Section 0.10.2 — Inter font preload mandate.
+ *   - AAP Section 0.10.5 — SSO components not yet implemented; visual
+ *                          assertions execute fully once the component
+ *                          tree materialises.
  */
 
 import { test, expect } from '@tests/setup/playwright';

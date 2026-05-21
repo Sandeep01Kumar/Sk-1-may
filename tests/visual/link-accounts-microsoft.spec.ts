@@ -34,6 +34,9 @@
  *   - AAP Section 0.7.3 — Visual regression ≤ 0.1% mismatch gate.
  *   - AAP Section 0.10.2 — Inter font preload mandate.
  *   - AAP Section 0.10.3 — Modal shadow token captured verbatim.
+ *   - AAP Section 0.10.5 — SSO components not yet implemented; visual
+ *                          assertions execute fully once the component
+ *                          tree materialises.
  */
 
 import { test, expect } from '@tests/setup/playwright';
