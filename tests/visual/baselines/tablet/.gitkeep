@@ -1,0 +1,52 @@
+# Tablet Visual Regression Baselines — Placeholder
+
+This folder is intentionally empty in the initial AAP delivery.
+
+# Purpose
+
+This folder stores tablet-viewport (768×1024) visual regression baseline PNGs
+used by the Playwright `*-tablet` projects (`chromium-tablet`, `firefox-tablet`,
+`webkit-tablet`) when running the eight visual specs in `tests/visual/*.spec.ts`.
+
+# Why is this folder empty?
+
+Per AAP Section 0.4.5 and Section 0.10.5, the Figma file
+`2qR7NSTmQLynkmlj9B4ltc` provides only desktop-resolution (2880×2048 and
+1104×854) renderings of the SSO frames. Tablet renderings at 768×1024
+cannot be derived from these without distortion, so tablet baselines must
+be captured from the freshly-implemented SSO components during the first
+Playwright `--update-snapshots` run.
+
+# Future Population Workflow
+
+Once the SSO components are authored in a subsequent implementation cycle:
+
+  1. Run:
+       npx playwright test --update-snapshots tests/visual/ --project=chromium-tablet
+     (and similarly for firefox-tablet, webkit-tablet)
+  2. Playwright captures live screenshots of the SSO routes at 768×1024 viewport
+     and writes them to this folder.
+  3. A designer reviews each captured PNG against the Figma design intent
+     (extrapolating from the desktop renderings).
+  4. After designer sign-off, the eight tablet baselines are committed:
+       - signin-a-microsoft-only.png
+       - signin-b-microsoft-google.png
+       - signin-c-see-more.png
+       - signin-c-expanded.png
+       - registration-completion.png
+       - signup-error.png
+       - link-accounts-microsoft.png
+       - link-accounts-generic.png
+  5. Future visual spec runs at the tablet projects will then diff
+     against these committed baselines.
+  6. Once at least one PNG is committed, this .gitkeep file MAY be removed.
+
+# Cross-References
+
+- AAP Section 0.4.5 (Figma asset inventory — tablet baseline gap noted)
+- AAP Section 0.5.1 (file-by-file plan — tablet baselines CREATE on first run)
+- AAP Section 0.8.1 (exhaustively in scope — tablet baselines generated on first run)
+- AAP Section 0.10.2 (cross-device parity directive)
+- AAP Section 0.10.5 (honest limitation — tablet baselines not delivered)
+- Companion folders: tests/visual/baselines/desktop/, tests/visual/baselines/mobile/
+- Companion specs: tests/visual/signin-a.spec.ts through tests/visual/link-accounts-generic.spec.ts
