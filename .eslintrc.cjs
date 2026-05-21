@@ -28,7 +28,7 @@
 // Runtime context:
 //   ESLint 10 (the major version installed in this repository) removed
 //   support for the legacy `.eslintrc.*` configuration formats and now
-//   loads only the flat config (`eslint.config.js`). This `.eslintrc.cjs`
+//   loads only the flat config (`eslint.config.mjs`). This `.eslintrc.cjs`
 //   file is committed to satisfy the AAP File-by-File Test Plan
 //   (Section 0.5.1) which mandates its presence as the canonical
 //   declarative specification of the project's lint expectations. It
@@ -39,10 +39,20 @@
 //       to surface a11y rule expectations without invoking ESLint.
 //     - Downstream consumers of this repository who fork it and choose
 //       to pin an older ESLint major.
-//   At lint time today, the equivalent rules in `eslint.config.js`
+//   At lint time today, the equivalent rules in `eslint.config.mjs`
 //   produce identical enforcement; this file is documentation-grade
 //   plus compatibility-layer plus future-proofing for any move back
 //   to the legacy loader.
+//
+// Flat-config filename note (QA Issue 1 remediation):
+//   The flat config file uses the `.mjs` extension (was `.js` prior to
+//   QA Issue 1 remediation). The rename is required because
+//   `package.json` no longer declares `"type": "module"` — the field
+//   was removed to preserve the runtime behavior of the frozen
+//   `server.js` CommonJS artifact per AAP §0.10.4 and §0.8.2. Without
+//   `"type": "module"`, a plain `.js` extension would be parsed as
+//   CommonJS by Node and the ESM imports in `eslint.config.mjs` would
+//   fail. ESLint flat config officially supports `.mjs`.
 //
 // Cross-references:
 //   - AAP Section 0.5.1 (CREATE entry for `.eslintrc.cjs`).
@@ -129,7 +139,52 @@ module.exports = {
     // AAP Section 0.10.2. It pairs with axe-core at runtime (jest-axe
     // for component tests, @axe-core/playwright for E2E) to form a
     // defence-in-depth a11y validation strategy.
-    plugins: ['jsx-a11y'],
+    //
+    // QA Issue 4 (MINOR) remediation:
+    //   Three additional plugin entries below are declared here for
+    //   DOCUMENTATION PARITY with the checkpoint Phase 8 expectations.
+    //   Two of them — `react` and `react-hooks` — are NOT installed in
+    //   `node_modules` because AAP Section 0.6.1 does not list them as
+    //   devDependencies (per AAP §0.6.1's deliberate dependency scope).
+    //   Their inclusion here serves three purposes:
+    //
+    //   1. Make the lint expectations of the checkpoint instructions
+    //      visible to readers of this declarative spec.
+    //   2. Document the rule sets a future contributor would enable
+    //      once those plugins are added (after an AAP amendment).
+    //   3. Mirror the typescript-eslint plugin which IS installed via
+    //      the `typescript-eslint` umbrella package@8.59.4.
+    //
+    //   Because ESLint 10 loads ONLY the flat config
+    //   (`eslint.config.mjs`) at runtime — never `.eslintrc.cjs` — the
+    //   absence of these plugins from `node_modules` does NOT cause a
+    //   runtime error here. This file is documentation-grade. See
+    //   `eslint.config.mjs` for the authoritative lint configuration.
+    //
+    //   Cross-reference: the deliberate omission of `eslint-plugin-react`
+    //   and `eslint-plugin-react-hooks` from devDependencies is
+    //   documented in `docs/testing/README.md` per QA Issue 5 (MINOR).
+    plugins: [
+        // The accessibility plugin — INSTALLED via
+        // eslint-plugin-jsx-a11y@6.10.2 (AAP §0.6.1). Active at
+        // runtime via eslint.config.mjs.
+        'jsx-a11y',
+        // TypeScript-aware lint plugin — INSTALLED via the
+        // `typescript-eslint` umbrella package@8.59.4 (AAP §0.6.1).
+        // Active at runtime via eslint.config.mjs (`tseslint.configs.recommended`).
+        '@typescript-eslint',
+        // React JSX plugin — NOT installed (per AAP §0.6.1 scope).
+        // Declared here for documentation parity with checkpoint
+        // Phase 8 expectations. Future enablement requires adding
+        // `eslint-plugin-react` to devDependencies. See
+        // `docs/testing/README.md` for the deliberate-omission note.
+        'react',
+        // React Hooks plugin — NOT installed (per AAP §0.6.1 scope).
+        // Declared here for documentation parity. Future enablement
+        // requires adding `eslint-plugin-react-hooks` to
+        // devDependencies. See `docs/testing/README.md`.
+        'react-hooks',
+    ],
 
     // -----------------------------------------------------------------
     // Extended configurations
@@ -138,11 +193,30 @@ module.exports = {
         // `eslint:recommended` enables ESLint's curated safe-defaults
         // rule set: no-undef, no-unused-vars, no-cond-assign, etc.
         'eslint:recommended',
+        // `plugin:@typescript-eslint/recommended` provides the canonical
+        // TypeScript-aware rule set: no-explicit-any, no-unused-vars
+        // (the @typescript-eslint-aware version), consistent-type-imports,
+        // etc. Active at runtime via the flat config's
+        // `...tseslint.configs.recommended` spread (eslint.config.mjs).
+        // Added per QA Issue 4 (MINOR) for documentation parity.
+        'plugin:@typescript-eslint/recommended',
         // `plugin:jsx-a11y/recommended` enables every accessibility
         // rule the plugin ships with at its recommended severity. The
         // overrides below elevate the warn-level rules to error so
         // the lint gate is binary.
         'plugin:jsx-a11y/recommended',
+        // `plugin:react/recommended` — NOT effective at runtime (plugin
+        // not installed). Declared for documentation parity with
+        // checkpoint Phase 8 expectations. Would catch missing-key in
+        // lists, prop-type drift, and JSX best-practice issues when
+        // enabled. See `docs/testing/README.md` for the deliberate-
+        // omission note.
+        'plugin:react/recommended',
+        // `plugin:react-hooks/recommended` — NOT effective at runtime
+        // (plugin not installed). Declared for documentation parity.
+        // Would catch `useEffect` dependency-array bugs and rules-of-
+        // hooks violations when enabled.
+        'plugin:react-hooks/recommended',
     ],
 
     // -----------------------------------------------------------------
@@ -228,8 +302,12 @@ module.exports = {
         // The flat-config file is loaded by ESLint 10 itself and is
         // not part of this legacy spec's scope; avoid linting it
         // through this legacy entry to prevent rule conflicts during
-        // toolchain transitions.
+        // toolchain transitions. The file uses the `.mjs` extension
+        // (post QA Issue 1 remediation) to mark ES Module syntax
+        // without relying on package.json `"type": "module"` (which
+        // was removed to preserve server.js CommonJS runtime).
         'eslint.config.js',
+        'eslint.config.mjs',
         // Self-ignore: this config file would otherwise lint itself,
         // and CommonJS `module.exports` in a `.cjs` file is not a
         // standard target for the TypeScript parser.

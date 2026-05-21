@@ -1,6 +1,25 @@
 // ESLint flat configuration for the SSO test suite.
 //
 // =============================================================================
+// FILE EXTENSION NOTE (.mjs) — QA Issue 1 (CRITICAL) remediation
+// =============================================================================
+//
+// This file uses the `.mjs` extension (was `.js` prior to QA Issue 1
+// remediation). The rename is required because `package.json` no longer
+// declares `"type": "module"`. The `type` field was removed to preserve
+// the runtime behavior of the frozen `server.js` artifact (CommonJS
+// `require('http')`) per AAP §0.10.4 ("Adding test infrastructure does
+// NOT change the runtime behavior of the existing `server.js` artifact")
+// and AAP §0.8.2 ("Modifying the `127.0.0.1:3000` HTTP behaviour" is
+// OUT-OF-SCOPE).
+//
+// Without `"type": "module"`, a plain `.js` extension would be parsed as
+// CommonJS by Node, breaking the `import` statements below. The `.mjs`
+// extension is the standard way to mark an individual file as ES Module
+// regardless of the surrounding package.json `type` field; ESLint flat
+// config loaders explicitly support `.mjs` (eslint.config.{js,mjs,cjs}).
+//
+// =============================================================================
 // REVIEW REMEDIATION NOTE — Why this file is technically required
 // =============================================================================
 //
@@ -46,10 +65,14 @@
 // Cross-references:
 //   - AAP Section 0.6.1 (pins `eslint@10.4.0` and `eslint-plugin-jsx-a11y@6.10.2`)
 //   - AAP Section 0.7.3 (Lint quality gate)
+//   - AAP Section 0.8.2 (`server.js` modification is OUT-OF-SCOPE)
 //   - AAP Section 0.9.1 (`npm run lint` script body)
 //   - AAP Section 0.10.2 (jsx-a11y zero-warning a11y gate)
-//   - AAP Section 0.10.4 (`server.js` is frozen — must be ignored)
+//   - AAP Section 0.10.4 (`server.js` is frozen — must be ignored;
+//     runtime behavior of server.js must not change)
 //   - Code Review Report Critical Scope Boundary finding (this file)
+//   - QA Final Checkpoint F1 Issue 1 (CRITICAL) — package.json
+//     `"type": "module"` removed to preserve server.js runtime behavior
 //
 // =============================================================================
 //
