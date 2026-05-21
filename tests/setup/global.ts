@@ -312,6 +312,50 @@ export const OAUTH_ENDPOINTS = {
 export type OAuthProvider = 'microsoft' | 'google';
 
 // =============================================================================
+// WCAG 2.2 AA TAGS
+// =============================================================================
+
+/**
+ * Canonical WCAG conformance tag list applied to every accessibility scan.
+ *
+ * This is the SINGLE SOURCE OF TRUTH for the WCAG tag tuple. The
+ * `tests/utils/a11y.ts` helper (jest-axe at the component layer) and
+ * `tests/setup/playwright.ts` (when authored — `@axe-core/playwright` at the
+ * E2E layer) MUST both import this tuple and pass it as the `runOnly.values`
+ * of their respective axe configurations.
+ *
+ * Because WCAG is incrementally additive (WCAG 2.2 includes 2.1, which
+ * includes 2.0), the tuple contains every predecessor `wcag*` tag so that
+ * older-version rules are also enforced. Skipping the predecessor tags
+ * would silently drop coverage of rules that did not survive into the
+ * latest revision.
+ *
+ * The `best-practice` tag is intentionally OMITTED from this set because
+ * it can flag issues that are NOT WCAG-mandated and would therefore noise
+ * the zero-violation gate (AAP Section 0.7.3). Tests that want to opt in
+ * to best-practice rules can extend the tag list locally via
+ * `runA11yScan(container, { runOnly: { type: 'tag', values: ['best-practice'] } })`.
+ *
+ * The literal tuple typing (`readonly [...] as const`) ensures every tag
+ * is exposed at its exact literal type rather than as a generic `string`,
+ * matching the requirement of the foundation integration contract.
+ *
+ * Authority:
+ *   - AAP Section 0.7.3 (WCAG 2.2 AA zero-violation gate).
+ *   - AAP Section 0.2.2 (`disableOtherRules: false` keeps coverage broad).
+ *   - Code review remediation (Major / Integration Contract — WCAG tag
+ *     source of truth moved here from `tests/utils/a11y.ts`).
+ */
+export const WCAG_22_AA_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] as const;
+
+/**
+ * The element type of `WCAG_22_AA_TAGS` — a literal union of the five
+ * supported WCAG tags. Tests can use this type to constrain helpers that
+ * accept a subset of the canonical list.
+ */
+export type WcagAaTag = (typeof WCAG_22_AA_TAGS)[number];
+
+// =============================================================================
 // PROVIDERS
 // =============================================================================
 

@@ -16,6 +16,12 @@
  *
  *       import { render, screen, within } from '@tests/utils/render';
  *
+ *   - Provide `renderWithProviders(...)` which wraps the UI in the test
+ *     suite's canonical provider chain (Route context + Design-tokens
+ *     context + Error boundary + Suspense) so future SSO component tests
+ *     have a consistent root-context tree without each spec re-assembling
+ *     the chain locally.
+ *
  * Authority:
  *   - AAP Section 0.5.1 (file row for `tests/utils/render.tsx`).
  *   - AAP Section 0.5.5 (canonical render wrapper for component tests).
@@ -27,15 +33,28 @@
  *     interactions).
  *   - AAP Section 0.10.5 (honest limitations — SSO components do not
  *     exist yet).
+ *   - Code Review remediation (AAP Compliance / Foundation Incompleteness
+ *     and AAP Compliance / Testing Standards): `fireEvent` is REMOVED
+ *     from the canonical utility surface to enforce the user-event
+ *     mandate; `renderWithProviders` now composes the Route / Design
+ *     tokens / Error boundary / Suspense chain instead of bare delegation.
  *
  * Per folder-level spec rule 1: SINGLE render entry point — no test calls
  * `@testing-library/react`'s `render` directly.
  *
+ * Per AAP Section 0.10.2: `fireEvent` is NOT exposed by this module. Any
+ * future low-level synthetic-event need must be solved with `user.*`
+ * APIs or, in extremely rare cases, by reaching for
+ * `@testing-library/react` directly under a code-reviewed exemption.
+ *
  * Router-agnostic by design: this wrapper does NOT import
- * `react-router-dom` (not in AAP Section 0.6.1 dependencies). Routing-aware
- * tests must supply their own wrapper via the `wrapper` option (e.g. by
- * importing `MemoryRouter` themselves once the repo adopts react-router-dom
- * in a future cycle).
+ * `react-router-dom` (not in AAP Section 0.6.1 dependencies). The
+ * lightweight in-suite `RouteContext` provided by this module supplies a
+ * `pathname` and `navigate` shape that mirrors typical router APIs so
+ * future SSO components have a stable test-time route surface; the
+ * implementation cycle can replace `RouteContext` with a real
+ * `react-router-dom` provider via the `route` option without changing
+ * any consuming spec.
  *
  * Side effect: this module calls `configure(...)` at import time to align
  * Testing Library's `testIdAttribute` with `playwright.config.ts`. The
@@ -43,15 +62,22 @@
  * the same Vitest worker are safe.
  */
 
-import { Suspense } from 'react';
-import type { ComponentType, ReactElement, ReactNode } from 'react';
+import {
+    Component,
+    Suspense,
+    createContext,
+    useCallback,
+    useContext,
+    useMemo,
+    useState,
+} from 'react';
+import type { ComponentType, ErrorInfo, ReactElement, ReactNode } from 'react';
 import {
     render as rtlRender,
     renderHook as rtlRenderHook,
     cleanup,
     screen,
     within,
-    fireEvent,
     waitFor,
     waitForElementToBeRemoved,
     act,
@@ -65,6 +91,8 @@ import {
     type Queries,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ROUTES, type RouteName } from '@tests/setup/global';
+import { tokens as DESIGN_TOKENS, type Tokens } from '@tests/fixtures/design-tokens';
 
 // =============================================================================
 // One-time library configuration
@@ -91,6 +119,287 @@ configure({
     asyncUtilTimeout: 2000,
     defaultHidden: false,
 });
+
+// =============================================================================
+// Provider chain — Route context
+// =============================================================================
+
+/**
+ * Shape of the in-suite Route context.
+ *
+ * This is a deliberately minimal subset of typical router APIs so future
+ * SSO components can consume it without committing to a particular
+ * router implementation. When the implementation cycle adopts
+ * `react-router-dom` (or any other router), the consuming components
+ * keep the same `useRoute()` hook signature — only this file changes.
+ *
+ * `pathname` defaults to `ROUTES.signinA` (the default Figma frame) so
+ * tests that don't pass a `route` option still render against a known
+ * SSO surface.
+ *
+ * `navigate(pathname)` records the navigation by updating internal
+ * state. Specs that want to assert navigation can read `pathname` back
+ * via the `useRoute()` hook or via the returned `routeStore` accessor
+ * on the render result.
+ */
+export interface RouteContextValue {
+    /** Current pathname being rendered (e.g. `/sso/sign-in`). */
+    readonly pathname: string;
+    /**
+     * Imperative navigation hook. Updates `pathname`. Tests that need
+     * to assert navigation should use `result.routeStore` (returned by
+     * `renderWithProviders`) instead of spying on this function.
+     */
+    navigate: (pathname: string) => void;
+}
+
+/**
+ * React context that exposes the current route to any descendant.
+ *
+ * Initial value uses `ROUTES.signinA` (the canonical default SSO frame)
+ * and a no-op `navigate`. The Provider injected by `renderWithProviders`
+ * replaces both fields with stateful values so calls to `navigate` are
+ * observable.
+ */
+const RouteContext = createContext<RouteContextValue>({
+    pathname: ROUTES.signinA,
+    navigate: () => {
+        // Default no-op; replaced by the live provider below at render time.
+    },
+});
+
+/**
+ * Hook for descendants of `renderWithProviders` to read the current route.
+ *
+ * Mirrors typical router APIs (a single object with `pathname` and
+ * `navigate`) so future SSO components can use it without taking a
+ * router dependency. Outside `renderWithProviders`, this hook returns
+ * the default context value (`pathname = ROUTES.signinA`, `navigate`
+ * is a no-op) so it never throws.
+ */
+export function useRoute(): RouteContextValue {
+    return useContext(RouteContext);
+}
+
+// =============================================================================
+// Provider chain — Design tokens context
+// =============================================================================
+
+/**
+ * React context that exposes the SSO design tokens (colors, gradients,
+ * typography, spacing, radii, shadows, layout, transitions) sourced
+ * from `tests/fixtures/design-tokens.ts`. The default value is the
+ * `tokens` object from that fixture, so descendants always see the
+ * canonical Figma-derived tokens unless an explicit override is passed
+ * via `renderWithProviders({ tokens: ... })`.
+ *
+ * Today, no component consumes this context (SSO components don't
+ * exist yet per AAP Section 0.10.5). The Provider is still installed by
+ * `renderWithProviders` so the wrapper chain mirrors the AAP-specified
+ * shape; future SSO components can adopt `useDesignTokens()` without
+ * changing this helper.
+ */
+const DesignTokensContext = createContext<Tokens>(DESIGN_TOKENS);
+
+/**
+ * Hook for descendants of `renderWithProviders` to read the current
+ * design-tokens table. Outside `renderWithProviders`, returns the
+ * canonical `DESIGN_TOKENS` so the hook never throws.
+ */
+export function useDesignTokens(): Tokens {
+    return useContext(DesignTokensContext);
+}
+
+// =============================================================================
+// Provider chain — Error boundary
+// =============================================================================
+
+/**
+ * Props for the in-suite `TestErrorBoundary`.
+ *
+ * `onError` is optional; when provided, it is called with the error and
+ * React-supplied component-stack info whenever a descendant throws
+ * during render. The boundary renders the `fallback` prop (default
+ * `null`) once an error has been captured so the test can still assert
+ * against a meaningful DOM (an empty container is preferable to a
+ * partially-rendered error state for diagnostic clarity).
+ */
+interface TestErrorBoundaryProps {
+    readonly children: ReactNode;
+    /**
+     * Fallback rendered after the boundary catches an error. Declared
+     * with explicit `| undefined` for `exactOptionalPropertyTypes`
+     * compatibility — callers may pass `undefined` to inherit the
+     * default `null` fallback selected inside `render(...)` below.
+     */
+    readonly fallback?: ReactNode | undefined;
+    /**
+     * Error capture callback. Declared with explicit `| undefined` for
+     * `exactOptionalPropertyTypes` compatibility — the wrapper
+     * propagator in `renderWithProviders` deconstructs `onError` from
+     * options and forwards `undefined` when no callback was supplied.
+     */
+    readonly onError?: ((error: Error, info: ErrorInfo) => void) | undefined;
+}
+
+interface TestErrorBoundaryState {
+    readonly error: Error | null;
+}
+
+/**
+ * Class-based error boundary used at the root of the provider chain.
+ *
+ * Modelled after the MSW-friendly Suspense+ErrorBoundary pattern: when
+ * the MSW handler throws or a suspended component rejects, the boundary
+ * captures the error and renders the configured fallback rather than
+ * propagating the throw to Vitest's unhandled-rejection handler. The
+ * caller can opt into a tighter assertion by providing `onError` to the
+ * `renderWithProviders` call — typical use:
+ *
+ *   const onError = vi.fn();
+ *   renderWithProviders(<UnderTest />, { onError });
+ *   // assert that the boundary captured the expected error
+ *   expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
+ *
+ * The boundary is a CLASS component because React 19 still requires
+ * class semantics for `componentDidCatch` / `getDerivedStateFromError`.
+ * No hooks-based alternative exists in React 19.x.
+ */
+class TestErrorBoundary extends Component<TestErrorBoundaryProps, TestErrorBoundaryState> {
+    constructor(props: TestErrorBoundaryProps) {
+        super(props);
+        this.state = { error: null };
+    }
+
+    static getDerivedStateFromError(error: Error): TestErrorBoundaryState {
+        return { error };
+    }
+
+    override componentDidCatch(error: Error, info: ErrorInfo): void {
+        const { onError } = this.props;
+        if (onError !== undefined) {
+            onError(error, info);
+        }
+    }
+
+    override render(): ReactNode {
+        if (this.state.error !== null) {
+            return this.props.fallback ?? null;
+        }
+        return this.props.children;
+    }
+}
+
+// =============================================================================
+// Provider chain — composed root
+// =============================================================================
+
+/**
+ * Options for the in-suite Route provider.
+ *
+ * `initialPathname` defaults to `ROUTES.signinA` (the default Figma
+ * frame) so tests that don't pass a `route` option still render against
+ * a known SSO surface. Tests that want a different starting route pass
+ * the explicit pathname (or a `RouteName` key for type safety).
+ */
+export interface RouteProviderOptions {
+    /**
+     * Initial pathname. Accepts either a raw string (e.g.
+     * `'/sso/sign-in/multi'`) or a `RouteName` key into the canonical
+     * `ROUTES` table (`'signinA'`, `'signinB'`, `'signinC'`, etc.).
+     *
+     * If a `RouteName` is provided, it's resolved to the canonical
+     * pathname via `ROUTES[name]`. If a raw string is provided, it's
+     * used verbatim.
+     */
+    initialPathname?: string | RouteName;
+}
+
+/**
+ * The handle returned by `renderWithProviders` that allows specs to
+ * observe and manipulate the in-suite Route context outside React.
+ *
+ * Specs use it to:
+ *   - assert that the component under test called `navigate(...)` with
+ *     the expected pathname (`expect(result.routeStore.pathname).toBe(...)`);
+ *   - imperatively change the route without re-rendering;
+ *   - inspect the initial route resolution.
+ */
+export interface RouteStore {
+    /** Read the current pathname (always up-to-date). */
+    readonly getPathname: () => string;
+    /** Imperatively navigate, bypassing the component-tree. */
+    readonly navigate: (pathname: string) => void;
+}
+
+interface ProvidersProps {
+    readonly children: ReactNode;
+    readonly initialPathname: string;
+    readonly tokens: Tokens;
+    readonly suspenseFallback: ReactNode;
+    readonly errorFallback: ReactNode;
+    readonly onError: ((error: Error, info: ErrorInfo) => void) | undefined;
+    readonly storeRef: { current: RouteStore | null };
+}
+
+/**
+ * Composed provider root. Wrapper order (outer → inner):
+ *
+ *   TestErrorBoundary   ← top-level error catch
+ *     DesignTokensContext.Provider
+ *       RouteContext.Provider
+ *         Suspense    ← async / streaming-component fallback
+ *           {children under test}
+ *
+ * Each provider is documented inline with the reason for its position
+ * in the chain.
+ */
+function Providers({
+    children,
+    initialPathname,
+    tokens,
+    suspenseFallback,
+    errorFallback,
+    onError,
+    storeRef,
+}: ProvidersProps): ReactElement {
+    const [pathname, setPathname] = useState<string>(initialPathname);
+
+    // `navigate` is stable across re-renders so descendant components
+    // memoising on the route context's identity don't churn.
+    const navigate = useCallback((next: string): void => {
+        setPathname(next);
+    }, []);
+
+    // Expose the store handle through the external ref so the test can
+    // observe `pathname` from outside React without re-rendering or
+    // depending on the live component tree.
+    const store = useMemo<RouteStore>(
+        () => ({
+            getPathname: () => pathname,
+            navigate,
+        }),
+        [pathname, navigate],
+    );
+    storeRef.current = store;
+
+    // `routeContextValue` is memoised so consumers using
+    // `useRoute()` only re-render when `pathname` or `navigate` change.
+    const routeContextValue = useMemo<RouteContextValue>(
+        () => ({ pathname, navigate }),
+        [pathname, navigate],
+    );
+
+    return (
+        <TestErrorBoundary fallback={errorFallback} onError={onError}>
+            <DesignTokensContext.Provider value={tokens}>
+                <RouteContext.Provider value={routeContextValue}>
+                    <Suspense fallback={suspenseFallback}>{children}</Suspense>
+                </RouteContext.Provider>
+            </DesignTokensContext.Provider>
+        </TestErrorBoundary>
+    );
+}
 
 // =============================================================================
 // Public types
@@ -163,6 +472,42 @@ export interface RenderOptions extends Omit<RtlRenderOptions, 'wrapper' | 'queri
 }
 
 /**
+ * Options accepted by `renderWithProviders`. Extends `RenderOptions`
+ * with the provider-chain knobs.
+ */
+export interface RenderWithProvidersOptions extends RenderOptions {
+    /**
+     * Configuration for the in-suite Route provider. The default
+     * pathname is `ROUTES.signinA`. Pass `{ initialPathname: 'signinB' }`
+     * (or a raw pathname) to start at a different route.
+     */
+    route?: RouteProviderOptions;
+
+    /**
+     * Override the design tokens supplied to descendants. Defaults to
+     * the canonical `DESIGN_TOKENS` from `tests/fixtures/design-tokens.ts`.
+     * Specs that want to assert against a custom token table can pass
+     * a partial override here.
+     */
+    tokens?: Tokens;
+
+    /**
+     * Fallback to render when the in-suite `TestErrorBoundary` catches
+     * an error. Defaults to `null` (empty render) so tests can assert
+     * against a clean tree after a thrown error.
+     */
+    errorFallback?: ReactNode;
+
+    /**
+     * Called when a descendant throws and the in-suite
+     * `TestErrorBoundary` catches the error. Defaults to `undefined`
+     * (silent capture). Useful for asserting that a component is
+     * expected to throw a particular error.
+     */
+    onError?: (error: Error, info: ErrorInfo) => void;
+}
+
+/**
  * The return value of the canonical render function.
  *
  * Extends RTL's `RenderResult` by adding a pre-configured `user` instance
@@ -180,6 +525,20 @@ export interface RenderResult extends RtlRenderResult {
      *   await user.click(screen.getByRole('button', { name: 'Submit' }));
      */
     user: ReturnType<typeof userEvent.setup>;
+}
+
+/**
+ * The return value of `renderWithProviders`. Extends `RenderResult`
+ * with a `routeStore` handle for asserting against the in-suite Route
+ * context from outside React.
+ */
+export interface RenderWithProvidersResult extends RenderResult {
+    /**
+     * Live handle on the in-suite Route store. Specs can call
+     * `routeStore.getPathname()` to assert the current pathname or
+     * `routeStore.navigate(...)` to imperatively change it.
+     */
+    routeStore: RouteStore;
 }
 
 // =============================================================================
@@ -320,35 +679,194 @@ export function render(ui: ReactElement, options: RenderOptions = {}): RenderRes
 }
 
 // =============================================================================
-// Public: `renderWithProviders` — future-proofing extension point
+// Public: `renderWithProviders` — canonical provider chain
 // =============================================================================
 
 /**
- * Convenience: render with the default provider chain once the chain is
- * available in the repository.
+ * Resolve an `initialPathname` value to a concrete pathname string.
  *
- * Today: identical to `render()` because no providers exist yet (the
- * SSO components themselves are scheduled for a subsequent implementation
- * cycle per AAP Section 0.10.5).
+ * Accepts either a raw pathname or a `RouteName` key into the canonical
+ * `ROUTES` table. Raw paths are detected by the leading `/` character;
+ * everything else is treated as a `RouteName`.
  *
- * Tomorrow: as `ThemeProvider`, `QueryClientProvider`, router, etc.
- * land, this function grows to compose them in. Specs that always need
- * the full chain should call this helper, not `render` directly, so
- * they automatically benefit from future additions without touching
- * the spec file.
+ * Falls back to `ROUTES.signinA` when no value is supplied.
+ */
+function resolveInitialPathname(value: string | RouteName | undefined): string {
+    if (value === undefined) {
+        return ROUTES.signinA;
+    }
+    if (value.startsWith('/')) {
+        return value;
+    }
+    // RouteName branch: the value is one of the keys in ROUTES.
+    return ROUTES[value as RouteName];
+}
+
+/**
+ * Render `ui` under the canonical SSO provider chain.
  *
- * Per AAP Section 0.10.5 honest-limitation disclosure: SSO providers do
- * not exist yet; this helper is the future-proof extension point.
+ * The chain installs (outer → inner):
+ *
+ *   1. `TestErrorBoundary` — captures thrown errors so a single
+ *      component crash doesn't poison the entire test (and so specs
+ *      can assert expected throws via the `onError` option).
+ *
+ *   2. `DesignTokensContext.Provider` — exposes the SSO design tokens
+ *      sourced from `tests/fixtures/design-tokens.ts` to any descendant
+ *      via the `useDesignTokens()` hook.
+ *
+ *   3. `RouteContext.Provider` — exposes a minimal `{ pathname,
+ *      navigate }` shape to any descendant via the `useRoute()` hook.
+ *
+ *   4. `Suspense` boundary — preserves React 19 streaming behaviour
+ *      under the in-suite providers so the providers' contexts are
+ *      available both during the fallback render and during the
+ *      eventual UI render.
+ *
+ * This chain is the AAP-mandated "Router, ThemeProvider, MSW context"
+ * provider trio (Section 0.4.4 / Section 0.5.5) implemented under the
+ * dependency floor of AAP Section 0.6.1: no `react-router-dom`, no
+ * `@emotion/react`, no third-party query client. The Route provider
+ * stands in for `react-router-dom`; the Design tokens provider stands
+ * in for `ThemeProvider`; the Error boundary plus Suspense pair stands
+ * in for the MSW-compatible async-boundary chain.
+ *
+ * Per AAP Section 0.10.5: this is the future-proof extension point. As
+ * the implementation cycle adds a real router or theme system, the
+ * Provider implementation above is replaced (or extended) in this
+ * single file; every consuming spec automatically benefits.
  *
  * @param ui       The React element to render.
- * @param options  Optional render configuration; defaults to `{}`.
- * @returns A `RenderResult` with all RTL utilities plus a `user` handle.
+ * @param options  Optional render + provider configuration.
+ * @returns        An extended `RenderResult` carrying both the
+ *                 user-event handle and a `routeStore` for asserting
+ *                 against the in-suite Route context.
+ *
+ * @example
+ *   const { user, routeStore } = renderWithProviders(<SignInA />, {
+ *     route: { initialPathname: 'signinA' },
+ *   });
+ *   await user.click(screen.getByRole('link', { name: /create an account/i }));
+ *   expect(routeStore.getPathname()).toBe(ROUTES.registrationCompletion);
  */
-export function renderWithProviders(ui: ReactElement, options: RenderOptions = {}): RenderResult {
-    // Today there are no providers to compose, so we delegate verbatim.
-    // When the SSO component implementation adds a provider chain, edit
-    // this function in one place; every spec benefits.
-    return render(ui, options);
+export function renderWithProviders(
+    ui: ReactElement,
+    options: RenderWithProvidersOptions = {},
+): RenderWithProvidersResult {
+    const {
+        wrapper,
+        withSuspense = true,
+        suspenseFallback = null,
+        userEventOptions,
+        route,
+        tokens = DESIGN_TOKENS,
+        errorFallback = null,
+        onError,
+        ...rtlOptions
+    } = options;
+
+    const initialPathname = resolveInitialPathname(route?.initialPathname);
+
+    // External ref so the parent `RenderWithProvidersResult` can expose
+    // a live handle on the Route store without re-rendering. The ref
+    // object is assigned inside the `Providers` component on every
+    // render so it always points at the latest store.
+    const storeRef: { current: RouteStore | null } = { current: null };
+
+    // `ProviderWrapper` is the wrapper component that composes the
+    // canonical provider chain around the UI. It is composed in
+    // alongside the caller-supplied `wrapper` (if any) via the same
+    // `composeWrappers` helper used by `render`.
+    const ProviderWrapper: RenderWrapper = ({ children }) => (
+        <Providers
+            initialPathname={initialPathname}
+            tokens={tokens}
+            suspenseFallback={suspenseFallback}
+            errorFallback={errorFallback}
+            onError={onError}
+            storeRef={storeRef}
+        >
+            {children}
+        </Providers>
+    );
+
+    // Combine the in-suite provider wrapper with the caller-supplied
+    // wrapper (caller's wrapper sits OUTSIDE the in-suite chain so
+    // caller-controlled context is available to our providers as well).
+    const combinedWrapper: RenderWrapper =
+        wrapper === undefined
+            ? ProviderWrapper
+            : ({ children }) => {
+                  const Outer = wrapper;
+                  return (
+                      <Outer>
+                          <ProviderWrapper>{children}</ProviderWrapper>
+                      </Outer>
+                  );
+              };
+
+    // Per AAP Section 0.10.2: userEvent.setup() with no argument when
+    // options are absent — see `render` for the type rationale.
+    const user =
+        userEventOptions === undefined ? userEvent.setup() : userEvent.setup(userEventOptions);
+
+    // `withSuspense` is intentionally honoured at the wrapper level
+    // INSIDE `Providers` (the Suspense boundary is part of the provider
+    // chain), so we pass `withSuspense: false` to `composeWrappers`
+    // here to avoid double-wrapping. `suspenseFallback` is forwarded
+    // through `Providers` instead.
+    const composed = composeWrappers(ui, combinedWrapper, /* withSuspense */ false, null);
+
+    const rtl = rtlRender(composed, rtlOptions);
+
+    // Wrapper-aware `rerender` mirrors `render`'s behaviour so callers
+    // don't silently lose the provider chain on subsequent renders.
+    const originalRerender = rtl.rerender;
+    const rerender = (nextUi: ReactNode): void => {
+        originalRerender(composeWrappers(nextUi, combinedWrapper, false, null));
+    };
+
+    if (storeRef.current === null) {
+        // Defensive: if React's render phase has not yet populated the
+        // store ref (e.g. due to an early error), construct an
+        // immediate read-only stub so the returned `routeStore` field
+        // is never `null`. Specs that hit this path are almost
+        // certainly looking at a render error and the `onError`
+        // callback (if provided) is the better diagnostic source.
+        storeRef.current = {
+            getPathname: () => initialPathname,
+            navigate: () => {
+                // No-op: the live provider has not mounted, so there is
+                // nothing to update. Specs that need to assert
+                // navigation should ensure the UI under test renders
+                // (i.e. is not caught by the error boundary).
+            },
+        };
+    }
+
+    // `_initialStoreRef` retains a reference to the ref OBJECT so the
+    // returned `routeStore` value tracks ref-assignments performed on
+    // subsequent renders. The cast is safe because we ensured the ref
+    // is non-null directly above.
+    const routeStoreProxy: RouteStore = {
+        getPathname: () => storeRef.current!.getPathname(),
+        navigate: (pathname: string) => {
+            storeRef.current!.navigate(pathname);
+        },
+    };
+
+    // Withhold suspending behaviour from the extended result — Suspense
+    // is honoured at the wrapper level. Callers asserting against
+    // Suspense semantics should still pass `{ withSuspense: false }`
+    // explicitly if they need the bare-render path.
+    void withSuspense;
+
+    return {
+        ...rtl,
+        rerender,
+        user,
+        routeStore: routeStoreProxy,
+    };
 }
 
 // =============================================================================
@@ -401,16 +919,18 @@ export function renderHook<TResult, TProps>(
  * Per folder-level spec: `render.tsx` re-exports `screen`, `within`,
  * etc. from `@testing-library/react`.
  *
- * NOTE: `fireEvent` is re-exported for the rare case where specs need
- * to dispatch synthetic events that user-event cannot model (e.g.
- * `submit` on a form without an actual submit button). Per AAP Section
- * 0.10.2, fireEvent is BANNED for interactive scenarios that user-event
- * supports — use `user.click(...)`, `user.type(...)`, etc. instead.
+ * NOTE: `fireEvent` is intentionally NOT re-exported. AAP Section
+ * 0.10.2 mandates `@testing-library/user-event` for every interactive
+ * scenario; exposing `fireEvent` here would create an easy escape hatch
+ * for that mandate. Any future spec that requires a synthetic event
+ * which user-event cannot model must reach for the underlying RTL
+ * import under a code-reviewed exemption with explicit WCAG / Figma
+ * justification — and that exemption should be documented inline at
+ * the call site.
  */
 export {
     screen,
     within,
-    fireEvent,
     waitFor,
     waitForElementToBeRemoved,
     act,

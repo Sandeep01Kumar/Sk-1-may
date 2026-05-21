@@ -6,8 +6,9 @@
  * `tests/a11y`, and any in-spec axe scan elsewhere.
  *
  * Responsibilities:
- *   - Configure jest-axe with the WCAG 2.2 AA rule set (and predecessor
- *     WCAG versions).
+ *   - Configure jest-axe with the WCAG 2.2 AA rule set sourced from
+ *     `tests/setup/global.ts.WCAG_22_AA_TAGS` (the canonical single
+ *     source of truth — never duplicated locally).
  *   - Expose `expectNoA11yViolations(container)` which runs axe and
  *     throws (with rich diagnostic output) when violations are present.
  *   - Expose the pre-configured `axe` runner for tests that need to
@@ -32,13 +33,28 @@
  *     happy-dom; the canonical color-contrast gate lives in the E2E
  *     layer via `@axe-core/playwright`).
  *
- * Companion file: `tests/utils/jest-axe.d.ts` provides the ambient
- * TypeScript declarations for jest-axe (which ships no `.d.ts`).
+ * Type declarations for `jest-axe`:
+ *   `jest-axe@10.0.0` ships no `.d.ts` typings and no `@types/jest-axe`
+ *   companion package is available on npm. The ambient declarations
+ *   that type the `jest-axe` module live in the companion script-style
+ *   declaration file `tests/utils/jest-axe.d.ts` (which has no top-level
+ *   imports or exports so its `declare module 'jest-axe' { ... }` block
+ *   is treated by TypeScript as a NEW ambient external module
+ *   declaration rather than as a module augmentation — the augmentation
+ *   path is infeasible here because jest-axe has no existing typed
+ *   module to augment, which would yield TS2665 when a consumer also
+ *   imports from jest-axe). The full rationale and authority chain is
+ *   documented at the top of `tests/utils/jest-axe.d.ts`.
  */
+
+// =============================================================================
+// Runtime imports
+// =============================================================================
 
 import { configureAxe, toHaveNoViolations, type JestAxeConfigureOptions } from 'jest-axe';
 import { expect } from 'vitest';
 import type { AxeResults, Result as AxeResult } from 'axe-core';
+import { WCAG_22_AA_TAGS } from '@tests/setup/global';
 
 // =============================================================================
 // Vitest matcher augmentation
@@ -103,33 +119,6 @@ declare module 'vitest' {
 expect.extend(toHaveNoViolations);
 
 // =============================================================================
-// WCAG 2.2 AA rule tags
-// =============================================================================
-
-/**
- * WCAG conformance tags applied to every axe scan.
- *
- * Per AAP Section 0.7.3 the suite gates on WCAG 2.2 AA. Because WCAG is
- * incrementally additive (WCAG 2.2 includes 2.1, which includes 2.0),
- * we include every predecessor `wcag*` tag so older-version rules are
- * also enforced. Skipping the predecessor tags would silently drop
- * coverage of rules that did not survive into the latest revision.
- *
- * The `best-practice` tag is intentionally OMITTED from this set
- * because it can flag issues that are NOT WCAG-mandated and would
- * therefore noise the zero-violation gate (AAP Section 0.7.3). Tests
- * that want to opt in to best-practice rules can call
- * `runA11yScan(container, { runOnly: { type: 'tag', values: ['best-practice'] } })`.
- */
-export const WCAG_22_AA_RULES: readonly string[] = [
-    'wcag2a',
-    'wcag2aa',
-    'wcag21a',
-    'wcag21aa',
-    'wcag22aa',
-] as const;
-
-// =============================================================================
 // Axe configuration
 // =============================================================================
 
@@ -143,10 +132,11 @@ export const WCAG_22_AA_RULES: readonly string[] = [
  *     over the legacy 'no-passes' reporter; the v1 reporter is
  *     deprecated and is not guaranteed to work with axe-core 4.11.x).
  *
- *   - `runOnly: { type: 'tag', values: [...WCAG_22_AA_RULES] }`
- *     restricts axe to the WCAG-tagged rules, eliminating the
- *     `experimental` and `best-practice` families which are not in the
- *     AAP-mandated gate (Sections 0.7.3 + 0.10.2).
+ *   - `runOnly: { type: 'tag', values: [...WCAG_22_AA_TAGS] }`
+ *     restricts axe to the WCAG-tagged rules sourced from the canonical
+ *     `tests/setup/global.ts.WCAG_22_AA_TAGS` literal tuple, eliminating
+ *     the `experimental` and `best-practice` families which are not in
+ *     the AAP-mandated gate (Sections 0.7.3 + 0.10.2).
  *
  *   - `rules: {}` declares NO rule overrides. This is non-negotiable
  *     per AAP Section 0.10.2: every WCAG 2.2 AA rule (including
@@ -177,7 +167,12 @@ const AXE_CONFIG: JestAxeConfigureOptions = {
     reporter: 'v2',
     runOnly: {
         type: 'tag',
-        values: [...WCAG_22_AA_RULES],
+        // Spread the canonical literal tuple into a regular `string[]`
+        // because axe-core's `RunOnly.values` field expects `string[]`
+        // rather than the narrower readonly tuple type — the spread
+        // preserves the runtime value exactly while satisfying the
+        // typed contract.
+        values: [...WCAG_22_AA_TAGS],
     },
     /*
      * Intentionally empty: NO rule overrides per AAP Section 0.10.2.
@@ -365,6 +360,19 @@ export function formatViolations(violations: readonly AxeResult[]): string {
  * consuming specs.)
  */
 export { toHaveNoViolations };
+
+/**
+ * Re-export the canonical WCAG tag tuple so consumers that import only
+ * from this module can still reference the tag list without a second
+ * import from `@tests/setup/global`. The exported value is the SAME
+ * tuple reference (not a copy) so identity comparisons hold.
+ *
+ * Authority:
+ *   - AAP Section 0.7.3 (WCAG 2.2 AA zero-violation gate).
+ *   - Code review remediation (Integration Contract — single source of
+ *     truth in `tests/setup/global.ts`).
+ */
+export { WCAG_22_AA_TAGS };
 
 /**
  * Re-export the axe-core `Result` types for ergonomic consumer

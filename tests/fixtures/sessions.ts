@@ -20,10 +20,32 @@
  * `*_PAYLOAD` constants below, so tests that decode-and-compare will succeed
  * for every claim except the signature itself (which is deliberately fake).
  *
+ * NOTE: The encoded `exp` claim for non-expired tokens is the far-future
+ * 2050-01-01T01:00:00.000Z (access) / 2050-01-31T00:00:00.000Z (refresh) so
+ * tests that perform real expiration arithmetic against the decoded payload
+ * see these tokens as semantically valid for any realistic test execution
+ * window. The advertised `expiresIn` field in `AuthSuccessResponse` continues
+ * to use the canonical `ACCESS_TOKEN_LIFETIME_SECONDS` (3600 s) as the OAuth
+ * convention dictates — these two values are intentionally decoupled.
+ *
  * Per folder-level spec rule 3: NO Date.now() or crypto.randomUUID() at
- * module load. All canonical timestamps are anchored at
- *   2024-01-01T00:00:00.000Z (1704067200 epoch seconds)
- * unless explicitly noted as expired (2020 epoch) or far-future (2099 epoch).
+ * module load. All canonical timestamps are static literal values:
+ *   - Issued-at (`iat`) anchor: 2024-01-01T00:00:00.000Z (1704067200 epoch).
+ *     Represents the conceptual moment each token was issued; always in the
+ *     past from any realistic test execution.
+ *   - Valid-token expiration (`exp`) anchor: 2050-01-01T01:00:00.000Z (access,
+ *     2524611600 epoch) / 2050-01-31T00:00:00.000Z (refresh, 2527200000 epoch).
+ *     Far-future timestamps ensuring `STANDARD_SESSION`, `FEDERATED_SESSION`,
+ *     and `NEW_USER_SESSION` are semantically "currently valid" for any
+ *     reasonable test execution window through 2049. This decouples token
+ *     expiration from the canonical `ACCESS_TOKEN_LIFETIME_SECONDS` /
+ *     `REFRESH_TOKEN_LIFETIME_SECONDS` constants (which still describe the
+ *     advertised `expiresIn` field in the auth response shape).
+ *   - Expired-token expiration (`exp`): 2020-01-01T00:00:00.000Z (1577836800)
+ *     — explicitly past so token-validation tests can verify rejection.
+ *   - Far-future reference (`FAR_FUTURE_EXP`): 2099-01-01T00:00:00.000Z
+ *     (4070908800) — distinct marker for tests that require a clearly
+ *     "never expires" timestamp.
  *
  * Identity values for the standard, federated, and new-user accounts mirror
  * the canonical `TEST_USERS` table defined in `tests/setup/global.ts` so
@@ -153,35 +175,60 @@ export const SESSION_REFERENCE_IAT = 1704067200 as const;
 export const SESSION_REFERENCE_IAT_ISO = '2024-01-01T00:00:00.000Z' as const;
 
 /**
- * One hour in seconds — the canonical access-token lifetime.
+ * One hour in seconds — the canonical access-token lifetime advertised by
+ * the auth backend.
  *
- * Matches the `expiresIn` field returned by `AuthSuccessResponse`.
+ * This value is REPORTED in the `expiresIn` field of `AuthSuccessResponse`
+ * to match the OAuth 2.0 convention (RFC 6749 §5.1). It is intentionally
+ * DECOUPLED from `VALID_ACCESS_TOKEN_EXP` below — the embedded JWT `exp`
+ * uses a far-future value so static fixtures remain semantically valid for
+ * any realistic test execution window, while the response shape continues
+ * to advertise the canonical one-hour lifetime that real backends use.
  */
 export const ACCESS_TOKEN_LIFETIME_SECONDS = 3600 as const;
 
 /**
- * Thirty days in seconds — the canonical refresh-token lifetime.
+ * Thirty days in seconds — the canonical refresh-token lifetime advertised
+ * by the auth backend.
  *
  * Equals 30 × 24 × 60 × 60 = 2,592,000. Written as a literal so the
  * `as const` assertion applies (TypeScript rejects `as const` on
- * arithmetic expressions).
+ * arithmetic expressions). Decoupled from `VALID_REFRESH_TOKEN_EXP` for the
+ * same reason as the access-token lifetime above.
  */
 export const REFRESH_TOKEN_LIFETIME_SECONDS = 2_592_000 as const;
 
 /**
- * Reference access-token expiration: REFERENCE_IAT + ACCESS_TOKEN_LIFETIME.
+ * Far-future access-token expiration for "currently valid" session fixtures.
  *
- * As epoch seconds: 1704070800 (= 2024-01-01T01:00:00.000Z).
+ * As epoch seconds: 2524611600 (= 2050-01-01T01:00:00.000Z).
+ *
+ * This timestamp is INTENTIONALLY far in the future — and INTENTIONALLY
+ * decoupled from `SESSION_REFERENCE_IAT + ACCESS_TOKEN_LIFETIME_SECONDS` —
+ * so any test that performs real JWT expiration arithmetic against the
+ * `STANDARD_SESSION`, `FEDERATED_SESSION`, or `NEW_USER_SESSION` fixtures
+ * sees them as semantically valid through 2049. The `iat` claim remains
+ * in the past (2024-01-01), which mirrors how a real backend would issue
+ * tokens (issued recently, expiring in the future).
+ *
+ * Tests that need an EXPLICIT far-future timestamp distinct from any session
+ * fixture should use `FAR_FUTURE_EXP` (2099-01-01) instead. Tests that need
+ * an EXPLICITLY EXPIRED timestamp should use `EXPIRED_TOKEN_EXP` (2020-01-01)
+ * or one of the `EXPIRED_*` token fixtures.
  */
-export const VALID_ACCESS_TOKEN_EXP: number = SESSION_REFERENCE_IAT + ACCESS_TOKEN_LIFETIME_SECONDS;
+export const VALID_ACCESS_TOKEN_EXP = 2524611600 as const;
 
 /**
- * Reference refresh-token expiration: REFERENCE_IAT + REFRESH_TOKEN_LIFETIME.
+ * Far-future refresh-token expiration for "currently valid" session fixtures.
  *
- * As epoch seconds: 1706659200 (= 2024-01-31T00:00:00.000Z).
+ * As epoch seconds: 2527200000 (= 2050-01-31T00:00:00.000Z).
+ *
+ * Decoupled from `SESSION_REFERENCE_IAT + REFRESH_TOKEN_LIFETIME_SECONDS`
+ * for the same reason as `VALID_ACCESS_TOKEN_EXP` above. The 30-day gap
+ * between this value and `VALID_ACCESS_TOKEN_EXP` preserves the canonical
+ * "refresh outlives access" relationship that real backends maintain.
  */
-export const VALID_REFRESH_TOKEN_EXP: number =
-    SESSION_REFERENCE_IAT + REFRESH_TOKEN_LIFETIME_SECONDS;
+export const VALID_REFRESH_TOKEN_EXP = 2527200000 as const;
 
 /**
  * Expired-token epoch — explicitly in the past so tests can verify rejection.
@@ -213,7 +260,7 @@ export const FAR_FUTURE_EXP = 4070908800 as const;
  *   - Header decodes to: `{"alg":"HS256","typ":"JWT"}`
  *   - Payload decodes to a JSON object EXACTLY matching
  *     `STANDARD_USER_ACCESS_TOKEN_PAYLOAD` below
- *     (sub, iat=1704067200, exp=1704070800, aud=blitzy-sso, iss=https://auth.blitzy.test,
+ *     (sub, iat=1704067200, exp=2524611600, aud=blitzy-sso, iss=https://auth.blitzy.test,
  *      jti=jti-standard-001, email=standard.user@blitzy.test, roles=["user"]).
  *   - Signature: `bW9jay1zaWduYXR1cmU` = base64url(`mock-signature`).
  *
@@ -222,7 +269,7 @@ export const FAR_FUTURE_EXP = 4070908800 as const;
 export const STANDARD_USER_ACCESS_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0IiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjE3MDQwNzA4MDAsImF1ZCI6ImJsaXR6eS1zc28iLCJpc3MiOiJodHRwczovL2F1dGguYmxpdHp5LnRlc3QiLCJqdGkiOiJqdGktc3RhbmRhcmQtMDAxIiwiZW1haWwiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0Iiwicm9sZXMiOlsidXNlciJdfQ' +
+    'eyJzdWIiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0IiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjI1MjQ2MTE2MDAsImF1ZCI6ImJsaXR6eS1zc28iLCJpc3MiOiJodHRwczovL2F1dGguYmxpdHp5LnRlc3QiLCJqdGkiOiJqdGktc3RhbmRhcmQtMDAxIiwiZW1haWwiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0Iiwicm9sZXMiOlsidXNlciJdfQ' +
     '.' +
     ('bW9jay1zaWduYXR1cmU' as const);
 
@@ -231,7 +278,7 @@ export const STANDARD_USER_ACCESS_TOKEN =
  *
  * Payload decodes to a JSON object EXACTLY matching
  * `STANDARD_USER_REFRESH_TOKEN_PAYLOAD` below
- * (sub, iat=1704067200, exp=1706659200, jti=jti-standard-refresh-001,
+ * (sub, iat=1704067200, exp=2527200000, jti=jti-standard-refresh-001,
  *  email=standard.user@blitzy.test).
  *
  * Signature: `bW9jay1yZWZyZXNoLXNpZ25hdHVyZQ` = base64url(`mock-refresh-signature`).
@@ -239,7 +286,7 @@ export const STANDARD_USER_ACCESS_TOKEN =
 export const STANDARD_USER_REFRESH_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0IiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjE3MDY2NTkyMDAsImp0aSI6Imp0aS1zdGFuZGFyZC1yZWZyZXNoLTAwMSIsImVtYWlsIjoic3RhbmRhcmQudXNlckBibGl0enkudGVzdCJ9' +
+    'eyJzdWIiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0IiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjI1MjcyMDAwMDAsImp0aSI6Imp0aS1zdGFuZGFyZC1yZWZyZXNoLTAwMSIsImVtYWlsIjoic3RhbmRhcmQudXNlckBibGl0enkudGVzdCJ9' +
     '.' +
     ('bW9jay1yZWZyZXNoLXNpZ25hdHVyZQ' as const);
 
@@ -254,7 +301,7 @@ export const STANDARD_USER_REFRESH_TOKEN =
 export const FEDERATED_USER_ACCESS_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJmZWRlcmF0ZWQudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoxNzA0MDcwODAwLCJhdWQiOiJibGl0enktc3NvIiwiaXNzIjoiaHR0cHM6Ly9hdXRoLmJsaXR6eS50ZXN0IiwianRpIjoianRpLWZlZGVyYXRlZC0wMDEiLCJlbWFpbCI6ImZlZGVyYXRlZC51c2VyQGJsaXR6eS50ZXN0Iiwicm9sZXMiOlsidXNlciJdLCJwcm92aWRlciI6Im1pY3Jvc29mdCJ9' +
+    'eyJzdWIiOiJmZWRlcmF0ZWQudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoyNTI0NjExNjAwLCJhdWQiOiJibGl0enktc3NvIiwiaXNzIjoiaHR0cHM6Ly9hdXRoLmJsaXR6eS50ZXN0IiwianRpIjoianRpLWZlZGVyYXRlZC0wMDEiLCJlbWFpbCI6ImZlZGVyYXRlZC51c2VyQGJsaXR6eS50ZXN0Iiwicm9sZXMiOlsidXNlciJdLCJwcm92aWRlciI6Im1pY3Jvc29mdCJ9' +
     '.' +
     ('bW9jay1zaWduYXR1cmU' as const);
 
@@ -266,7 +313,7 @@ export const FEDERATED_USER_ACCESS_TOKEN =
 export const FEDERATED_USER_REFRESH_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJmZWRlcmF0ZWQudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoxNzA2NjU5MjAwLCJqdGkiOiJqdGktZmVkZXJhdGVkLXJlZnJlc2gtMDAxIiwiZW1haWwiOiJmZWRlcmF0ZWQudXNlckBibGl0enkudGVzdCJ9' +
+    'eyJzdWIiOiJmZWRlcmF0ZWQudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoyNTI3MjAwMDAwLCJqdGkiOiJqdGktZmVkZXJhdGVkLXJlZnJlc2gtMDAxIiwiZW1haWwiOiJmZWRlcmF0ZWQudXNlckBibGl0enkudGVzdCJ9' +
     '.' +
     ('bW9jay1yZWZyZXNoLXNpZ25hdHVyZQ' as const);
 
@@ -278,7 +325,7 @@ export const FEDERATED_USER_REFRESH_TOKEN =
 export const NEW_USER_ACCESS_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJuZXcudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoxNzA0MDcwODAwLCJhdWQiOiJibGl0enktc3NvIiwiaXNzIjoiaHR0cHM6Ly9hdXRoLmJsaXR6eS50ZXN0IiwianRpIjoianRpLW5ldy0wMDEiLCJlbWFpbCI6Im5ldy51c2VyQGJsaXR6eS50ZXN0Iiwicm9sZXMiOlsidXNlciJdfQ' +
+    'eyJzdWIiOiJuZXcudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoyNTI0NjExNjAwLCJhdWQiOiJibGl0enktc3NvIiwiaXNzIjoiaHR0cHM6Ly9hdXRoLmJsaXR6eS50ZXN0IiwianRpIjoianRpLW5ldy0wMDEiLCJlbWFpbCI6Im5ldy51c2VyQGJsaXR6eS50ZXN0Iiwicm9sZXMiOlsidXNlciJdfQ' +
     '.' +
     ('bW9jay1zaWduYXR1cmU' as const);
 
@@ -288,7 +335,7 @@ export const NEW_USER_ACCESS_TOKEN =
 export const NEW_USER_REFRESH_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJuZXcudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoxNzA2NjU5MjAwLCJqdGkiOiJqdGktbmV3LXJlZnJlc2gtMDAxIiwiZW1haWwiOiJuZXcudXNlckBibGl0enkudGVzdCJ9' +
+    'eyJzdWIiOiJuZXcudXNlckBibGl0enkudGVzdCIsImlhdCI6MTcwNDA2NzIwMCwiZXhwIjoyNTI3MjAwMDAwLCJqdGkiOiJqdGktbmV3LXJlZnJlc2gtMDAxIiwiZW1haWwiOiJuZXcudXNlckBibGl0enkudGVzdCJ9' +
     '.' +
     ('bW9jay1yZWZyZXNoLXNpZ25hdHVyZQ' as const);
 
@@ -339,11 +386,14 @@ export const MALFORMED_TOKEN = 'this.is-not-a-valid-jwt' as const;
  *
  * Used to verify the SUT's signature-verification path rejects this token
  * with a "signature invalid" error rather than treating it as a parse error.
+ * The payload's `exp` is far-future (2050-01-01T01:00:00.000Z) so the SUT
+ * cannot mistake an expiration failure for a signature failure — this
+ * fixture forces the signature-verification code path specifically.
  */
 export const INVALID_SIGNATURE_TOKEN =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
     '.' +
-    'eyJzdWIiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0IiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjE3MDQwNzA4MDAsImF1ZCI6ImJsaXR6eS1zc28iLCJpc3MiOiJodHRwczovL2F1dGguYmxpdHp5LnRlc3QiLCJqdGkiOiJqdGktaW52YWxpZC0wMDEiLCJlbWFpbCI6InN0YW5kYXJkLnVzZXJAYmxpdHp5LnRlc3QiLCJyb2xlcyI6WyJ1c2VyIl19' +
+    'eyJzdWIiOiJzdGFuZGFyZC51c2VyQGJsaXR6eS50ZXN0IiwiaWF0IjoxNzA0MDY3MjAwLCJleHAiOjI1MjQ2MTE2MDAsImF1ZCI6ImJsaXR6eS1zc28iLCJpc3MiOiJodHRwczovL2F1dGguYmxpdHp5LnRlc3QiLCJqdGkiOiJqdGktaW52YWxpZC0wMDEiLCJlbWFpbCI6InN0YW5kYXJkLnVzZXJAYmxpdHp5LnRlc3QiLCJyb2xlcyI6WyJ1c2VyIl19' +
     '.' +
     ('tampered_signature_will_not_verify' as const);
 
@@ -478,44 +528,50 @@ export const EXPIRED_ACCESS_TOKEN_PAYLOAD: JwtPayload = {
 /**
  * Canonical session for the "standard" user (email+password sign-in).
  *
- * Expires 1 hour after `SESSION_REFERENCE_IAT_ISO` (access) and 30 days
- * after (refresh).
+ * Issued at `SESSION_REFERENCE_IAT_ISO` (2024-01-01T00:00:00.000Z), expires
+ * 2050-01-01T01:00:00.000Z (access) and 2050-01-31T00:00:00.000Z (refresh).
+ * The far-future expiration ensures this session is semantically valid for
+ * any reasonable test execution date — see the `VALID_ACCESS_TOKEN_EXP` and
+ * `VALID_REFRESH_TOKEN_EXP` documentation for the rationale on decoupling
+ * expiration from `iat + lifetime` arithmetic.
  */
 export const STANDARD_SESSION: Session = {
     accessToken: STANDARD_USER_ACCESS_TOKEN,
     refreshToken: STANDARD_USER_REFRESH_TOKEN,
     accessTokenPayload: STANDARD_USER_ACCESS_TOKEN_PAYLOAD,
     refreshTokenPayload: STANDARD_USER_REFRESH_TOKEN_PAYLOAD,
-    accessTokenExpiresAt: '2024-01-01T01:00:00.000Z',
-    refreshTokenExpiresAt: '2024-01-31T00:00:00.000Z',
+    accessTokenExpiresAt: '2050-01-01T01:00:00.000Z',
+    refreshTokenExpiresAt: '2050-01-31T00:00:00.000Z',
 };
 
 /**
  * Canonical session for the "federated" user (Microsoft OAuth sign-in).
  *
- * Identical timing to `STANDARD_SESSION`; the distinguishing feature is the
- * `provider: 'microsoft'` claim in `accessTokenPayload`.
+ * Identical timing to `STANDARD_SESSION` (far-future expirations); the
+ * distinguishing feature is the `provider: 'microsoft'` claim in
+ * `accessTokenPayload`.
  */
 export const FEDERATED_SESSION: Session = {
     accessToken: FEDERATED_USER_ACCESS_TOKEN,
     refreshToken: FEDERATED_USER_REFRESH_TOKEN,
     accessTokenPayload: FEDERATED_USER_ACCESS_TOKEN_PAYLOAD,
     refreshTokenPayload: FEDERATED_USER_REFRESH_TOKEN_PAYLOAD,
-    accessTokenExpiresAt: '2024-01-01T01:00:00.000Z',
-    refreshTokenExpiresAt: '2024-01-31T00:00:00.000Z',
+    accessTokenExpiresAt: '2050-01-01T01:00:00.000Z',
+    refreshTokenExpiresAt: '2050-01-31T00:00:00.000Z',
 };
 
 /**
  * Canonical session for the "new" user (immediately after completing the
- * Registration Completion flow).
+ * Registration Completion flow). Same far-future expirations as
+ * `STANDARD_SESSION` and `FEDERATED_SESSION`.
  */
 export const NEW_USER_SESSION: Session = {
     accessToken: NEW_USER_ACCESS_TOKEN,
     refreshToken: NEW_USER_REFRESH_TOKEN,
     accessTokenPayload: NEW_USER_ACCESS_TOKEN_PAYLOAD,
     refreshTokenPayload: NEW_USER_REFRESH_TOKEN_PAYLOAD,
-    accessTokenExpiresAt: '2024-01-01T01:00:00.000Z',
-    refreshTokenExpiresAt: '2024-01-31T00:00:00.000Z',
+    accessTokenExpiresAt: '2050-01-01T01:00:00.000Z',
+    refreshTokenExpiresAt: '2050-01-31T00:00:00.000Z',
 };
 
 /**

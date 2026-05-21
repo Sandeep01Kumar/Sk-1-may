@@ -230,6 +230,204 @@ export const REFERENCE_SIZE_PX = 16;
 let preloadPromise: Promise<void> | null = null;
 
 // -----------------------------------------------------------------------------
+// Deterministic FontFaceSet stub
+// -----------------------------------------------------------------------------
+//
+// Code Review remediation (Test Determinism): the canonical fix for the
+// font-readiness race surfaced by the review is a deterministic stub of
+// both `document.fonts.load()` and `document.fonts.ready` so any test
+// awaiting either resolves predictably, irrespective of which DOM
+// polyfill (happy-dom / jsdom) is in play and irrespective of the
+// underlying CSS font loading order.
+//
+// AAP Section 0.4.4 ("Asset preload mock"), Section 0.10.2 ("Inter font
+// is mandatory"), and Section 0.10.5 ("honest limitation disclosure")
+// all converge on this requirement: tests must observe a stable, fully-
+// resolved FontFaceSet regardless of the runtime's polyfill behaviour.
+//
+// The stub is INSTALLED automatically the first time `preloadInterFont()`
+// runs and is RESTORED to its captured original state by
+// `resetInterFontPreloadCache()`. Specs that need fine-grained control
+// can call `installFontFaceSetStub()` and `restoreFontFaceSetStub()`
+// directly.
+
+/**
+ * Snapshot of the original `document.fonts` state captured the first
+ * time `installFontFaceSetStub()` is invoked. `load` holds the original
+ * loader bound to the FontFaceSet (so restoration preserves `this` even
+ * when the property is reassigned). `readyDescriptor` holds the own-
+ * property descriptor for `ready` (typically `undefined` because `ready`
+ * is a prototype-level getter — the prototype's getter takes over when
+ * the own-property is deleted on restore).
+ */
+interface FontFaceSetSnapshot {
+    /**
+     * Original `load(font, text?)` implementation bound to the captured
+     * `FontFaceSet` instance, or `undefined` if the polyfill never
+     * defined a load method.
+     */
+    readonly load: ((font: string, text?: string) => Promise<FontFace[]>) | undefined;
+    /**
+     * Own-property descriptor for `ready` captured before the stub was
+     * installed. `undefined` if `ready` was inherited from the prototype
+     * (the typical case in happy-dom / jsdom / real browsers).
+     */
+    readonly readyDescriptor: PropertyDescriptor | undefined;
+}
+
+/**
+ * Snapshot of the FontFaceSet state before the stub was installed.
+ * `null` until `installFontFaceSetStub()` runs successfully; reset to
+ * `null` by `restoreFontFaceSetStub()`.
+ */
+let fontFaceSetSnapshot: FontFaceSetSnapshot | null = null;
+
+/**
+ * Install deterministic stubs for `document.fonts.load()` and
+ * `document.fonts.ready`.
+ *
+ * After this call:
+ *   - `document.fonts.load(...)` returns `Promise.resolve([])` for any
+ *     shorthand input — never throws, never blocks. This guarantees the
+ *     `Promise.all` inside `doPreload()` resolves regardless of which
+ *     polyfill (happy-dom / jsdom) is active.
+ *   - `document.fonts.ready` returns `Promise.resolve(document.fonts)`,
+ *     matching the FontFaceSet specification's "all loads complete"
+ *     state. Tests that `await document.fonts.ready` resolve
+ *     deterministically without waiting for actual @font-face fetches
+ *     to complete.
+ *
+ * Idempotent: calling twice is a no-op (the second call observes the
+ * non-null snapshot and returns immediately). To reset, call
+ * `restoreFontFaceSetStub()`.
+ *
+ * Environment fallthroughs:
+ *   - `typeof document === 'undefined'` (SSR / Node-only): no-op.
+ *   - `document.fonts === undefined` (DOM without FontFaceSet): no-op.
+ *
+ * The stub is intended for use under happy-dom (and, optionally, jsdom)
+ * where polyfill behaviour around FontFaceSet diverges from real
+ * browsers. Playwright E2E + visual specs run under
+ * Chromium/Firefox/WebKit which implement FontFaceSet faithfully; this
+ * file is NOT imported from those specs so the stub never affects them.
+ */
+export function installFontFaceSetStub(): void {
+    if (fontFaceSetSnapshot !== null) {
+        // Already installed — idempotent.
+        return;
+    }
+    if (typeof document === 'undefined') {
+        return;
+    }
+    const fonts: FontFaceSet | undefined = (document as Partial<Document>).fonts;
+    if (fonts === undefined) {
+        return;
+    }
+
+    // Capture the original `load` method (if any) so the eventual
+    // restore re-installs the polyfill's implementation rather than a
+    // copy. `.bind(fonts)` preserves `this` because some polyfills
+    // implement `load` as a regular method that reads from `this`.
+    const originalLoad: FontFaceSet['load'] | undefined =
+        typeof fonts.load === 'function'
+            ? (fonts.load.bind(fonts) as FontFaceSet['load'])
+            : undefined;
+
+    // Capture the own-property descriptor for `ready` (likely
+    // `undefined` because `ready` is a prototype-level getter — the
+    // prototype getter takes over again on restore when we delete the
+    // own property).
+    const originalReadyDescriptor: PropertyDescriptor | undefined = Object.getOwnPropertyDescriptor(
+        fonts,
+        'ready',
+    );
+
+    fontFaceSetSnapshot = {
+        load: originalLoad,
+        readyDescriptor: originalReadyDescriptor,
+    };
+
+    // Install the deterministic `load` stub. We cast through `unknown`
+    // because TypeScript's DOM types declare `load` as a method (not a
+    // settable property), but at runtime FontFaceSet methods are
+    // ordinary own/prototype properties that may be reassigned.
+    (
+        fonts as unknown as {
+            load: (font: string, text?: string) => Promise<FontFace[]>;
+        }
+    ).load = (): Promise<FontFace[]> => Promise.resolve([]);
+
+    // Install the deterministic `ready` getter. The descriptor is
+    // configurable so `restoreFontFaceSetStub()` can `delete` it later
+    // and let the prototype-level getter take over again.
+    Object.defineProperty(fonts, 'ready', {
+        configurable: true,
+        enumerable: true,
+        get(): Promise<FontFaceSet> {
+            return Promise.resolve(fonts);
+        },
+    });
+}
+
+/**
+ * Restore the original `document.fonts` state.
+ *
+ * After this call:
+ *   - `document.fonts.load(...)` is restored to the polyfill's original
+ *     implementation (or removed if no implementation was captured).
+ *   - `document.fonts.ready` is restored to the prototype-level getter
+ *     (the stub's own-property is deleted; the prototype's getter takes
+ *     over).
+ *
+ * No-op if `installFontFaceSetStub()` has not been called.
+ *
+ * Use cases:
+ *   - A spec that wants to assert real polyfill behaviour after a
+ *     stubbed setup.
+ *   - The `resetInterFontPreloadCache()` helper, which calls this
+ *     function as part of its full-reset semantics.
+ */
+export function restoreFontFaceSetStub(): void {
+    if (fontFaceSetSnapshot === null) {
+        return;
+    }
+    if (typeof document === 'undefined') {
+        // The snapshot was captured under a DOM environment but the
+        // document is no longer available; release the snapshot so a
+        // subsequent `installFontFaceSetStub()` can re-capture.
+        fontFaceSetSnapshot = null;
+        return;
+    }
+    const fonts: FontFaceSet | undefined = (document as Partial<Document>).fonts;
+    if (fonts === undefined) {
+        fontFaceSetSnapshot = null;
+        return;
+    }
+
+    // Restore `load`. If the snapshot captured a callable original we
+    // re-assign it; otherwise we leave the stub in place because there
+    // is no way to "delete" a prototype-level method without breaking
+    // every other FontFaceSet instance.
+    if (fontFaceSetSnapshot.load !== undefined) {
+        (
+            fonts as unknown as {
+                load: (font: string, text?: string) => Promise<FontFace[]>;
+            }
+        ).load = fontFaceSetSnapshot.load;
+    }
+
+    // Restore `ready`. We delete the own-property we installed; if the
+    // original was an own-property (rare), re-define it from the
+    // captured descriptor.
+    delete (fonts as unknown as Record<string, unknown>).ready;
+    if (fontFaceSetSnapshot.readyDescriptor !== undefined) {
+        Object.defineProperty(fonts, 'ready', fontFaceSetSnapshot.readyDescriptor);
+    }
+
+    fontFaceSetSnapshot = null;
+}
+
+// -----------------------------------------------------------------------------
 // Public API
 // -----------------------------------------------------------------------------
 
@@ -280,6 +478,13 @@ export function preloadInterFont(): Promise<void> {
         return preloadPromise;
     }
 
+    // Install the deterministic FontFaceSet stub BEFORE the load work
+    // begins. This ensures `doPreload()` runs against a stable surface
+    // and that downstream tests awaiting `document.fonts.ready` observe
+    // a resolved Promise regardless of which polyfill is active. The
+    // stub is idempotent and a no-op outside DOM environments.
+    installFontFaceSetStub();
+
     // Kick off the actual work and cache the Promise. Assigning before
     // returning ensures that if a second call to `preloadInterFont()`
     // arrives while `doPreload()` is still running, both callers share
@@ -301,12 +506,21 @@ export function preloadInterFont(): Promise<void> {
  *     worker and want a fresh preload on the next `beforeAll`.
  *
  * After this call, `preloadInterFont()` reverts to its first-call
- * behaviour — it WILL invoke `document.fonts.load(...)` again.
+ * behaviour — it WILL invoke `document.fonts.load(...)` again AND
+ * re-install the FontFaceSet stub.
+ *
+ * This helper also restores the original `document.fonts.load()` and
+ * `document.fonts.ready` state via `restoreFontFaceSetStub()` so a spec
+ * that wants to assert against the underlying polyfill behaviour can do
+ * so after calling this function. Specs that need finer-grained control
+ * over the stub lifecycle can call `installFontFaceSetStub()` /
+ * `restoreFontFaceSetStub()` directly.
  *
  * @returns void
  */
 export function resetInterFontPreloadCache(): void {
     preloadPromise = null;
+    restoreFontFaceSetStub();
 }
 
 // -----------------------------------------------------------------------------

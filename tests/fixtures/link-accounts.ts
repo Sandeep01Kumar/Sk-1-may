@@ -33,6 +33,22 @@
  * use the IANA-reserved `.test` TLD under `@blitzy.test` per AAP Section
  * 0.10.4 to ensure no real user can ever be implied by a fixture value.
  *
+ * Cross-fixture password coordination: every link-accounts request password
+ * literal in this file MIRRORS the canonical value from
+ * `tests/fixtures/passwords.ts`:
+ *
+ *   - `'StandardP@ssw0rd!'`  ↔  `PASSWORD_FOR_LINK_ACCOUNTS_MATCH.value`
+ *     (matches the standard user; drives the success / conflict paths)
+ *   - `'WrongLinkP@ssw0rd!'`  ↔  `PASSWORD_FOR_LINK_ACCOUNTS_WRONG.value`
+ *     (deliberately wrong; drives the invalid-password path)
+ *
+ * The values are intentionally duplicated as literals (not imported) because
+ * the folder-level spec mandates "fixtures import from nothing". When a
+ * change to either canonical password is required, BOTH files MUST be
+ * updated together; the static literal duplication serves as a documented
+ * single source of truth (the comment above each fixture flags which
+ * canonical constant the literal mirrors).
+ *
  * Authority:
  *   - AAP Section 0.3.1 (mocked dependencies — `POST /auth/link-accounts`).
  *   - AAP Section 0.4.2 (Link Accounts Modal test case blueprint).
@@ -252,13 +268,15 @@ export type LinkAccountsResponse =
  * 16383:42232) — the user has typed their existing-account password to
  * confirm linking to the Microsoft identity they just authenticated with.
  *
- * The `password` value mirrors the canonical "existing account" credential
- * used across the test suite; tests that need an explicitly-incorrect value
+ * The `password` value mirrors `PASSWORD_FOR_LINK_ACCOUNTS_MATCH.value`
+ * (`'StandardP@ssw0rd!'`) in `tests/fixtures/passwords.ts` so MSW handlers
+ * and component tests use the same canonical "correct password" literal
+ * across both fixtures. Tests that need an explicitly-incorrect value
  * should reach for `LINK_ACCOUNTS_INVALID_PASSWORD_REQUEST` below instead.
  */
 export const LINK_ACCOUNTS_MICROSOFT_REQUEST: LinkAccountsRequest = {
     email: 'existing.user@blitzy.test',
-    password: 'ExistingP@ssw0rd!',
+    password: 'StandardP@ssw0rd!',
     provider: 'microsoft',
     providerState: 'mock-microsoft-state-abc123',
 };
@@ -270,10 +288,13 @@ export const LINK_ACCOUNTS_MICROSOFT_REQUEST: LinkAccountsRequest = {
  * the link flow uses this shape if the OAuth callback determines that
  * account-link confirmation is required (i.e., the Google identity is new
  * but the email already maps to an existing Blitzy local account).
+ *
+ * The `password` value mirrors `PASSWORD_FOR_LINK_ACCOUNTS_MATCH.value`
+ * (`'StandardP@ssw0rd!'`) in `tests/fixtures/passwords.ts`.
  */
 export const LINK_ACCOUNTS_GOOGLE_REQUEST: LinkAccountsRequest = {
     email: 'existing.user@blitzy.test',
-    password: 'ExistingP@ssw0rd!',
+    password: 'StandardP@ssw0rd!',
     provider: 'google',
     providerState: 'mock-google-state-xyz789',
 };
@@ -287,10 +308,13 @@ export const LINK_ACCOUNTS_GOOGLE_REQUEST: LinkAccountsRequest = {
  * "See more" expansion). The `provider: 'other'` discriminator drives the
  * generic modal copy ("Continue with your provider" rather than provider-
  * specific phrasing).
+ *
+ * The `password` value mirrors `PASSWORD_FOR_LINK_ACCOUNTS_MATCH.value`
+ * (`'StandardP@ssw0rd!'`) in `tests/fixtures/passwords.ts`.
  */
 export const LINK_ACCOUNTS_GENERIC_REQUEST: LinkAccountsRequest = {
     email: 'existing.user@blitzy.test',
-    password: 'ExistingP@ssw0rd!',
+    password: 'StandardP@ssw0rd!',
     provider: 'other',
     providerState: 'mock-other-state-def456',
 };
@@ -303,10 +327,15 @@ export const LINK_ACCOUNTS_GENERIC_REQUEST: LinkAccountsRequest = {
  * commonly tested against the Microsoft variant; tests that need to assert
  * the invalid-password path for Google/other should spread-and-override
  * `provider` and `providerState` inline.
+ *
+ * The `password` value mirrors `PASSWORD_FOR_LINK_ACCOUNTS_WRONG.value`
+ * (`'WrongLinkP@ssw0rd!'`) in `tests/fixtures/passwords.ts` so MSW handlers
+ * and component tests use the same canonical "wrong password" literal
+ * across both fixtures.
  */
 export const LINK_ACCOUNTS_INVALID_PASSWORD_REQUEST: LinkAccountsRequest = {
     email: 'existing.user@blitzy.test',
-    password: 'WrongPassword123!',
+    password: 'WrongLinkP@ssw0rd!',
     provider: 'microsoft',
     providerState: 'mock-microsoft-state-abc123',
 };
@@ -318,10 +347,13 @@ export const LINK_ACCOUNTS_INVALID_PASSWORD_REQUEST: LinkAccountsRequest = {
  * OAuth identity referenced by `providerState` is already linked to a
  * DIFFERENT local account in the MSW backend. Drives the
  * `LINK_ACCOUNTS_CONFLICT` response.
+ *
+ * The `password` value mirrors `PASSWORD_FOR_LINK_ACCOUNTS_MATCH.value`
+ * (`'StandardP@ssw0rd!'`) in `tests/fixtures/passwords.ts`.
  */
 export const LINK_ACCOUNTS_CONFLICTING_REQUEST: LinkAccountsRequest = {
     email: 'existing.user@blitzy.test',
-    password: 'ExistingP@ssw0rd!',
+    password: 'StandardP@ssw0rd!',
     provider: 'microsoft',
     providerState: 'mock-conflicting-state-789',
 };
