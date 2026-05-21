@@ -206,38 +206,35 @@ export default defineConfig({
          * removed the `poolOptions` shape from `InlineConfig` and
          * promoted the option to the top level. See the migration
          * note at https://vitest.dev/guide/migration#pool-rework.
-         */
-        fileParallelism: true,
-
-        /*
-         * Legacy `poolOptions.threads.singleThread: false` retained
-         * per AAP Section 0.7.2 ("Vitest `pool: 'threads'` with
-         * `singleThread: false` for parallel safety") and AAP Section
-         * 0.5.1 (the schema's `members_exposed` list explicitly
-         * includes `test.poolOptions`).
          *
-         * The Vitest 4.x runtime accepts this structure with a
-         * deprecation notice — `logger.deprecate("test.poolOptions
-         * was removed in Vitest 4. All previous poolOptions are now
-         * top-level options ...")` — because `fileParallelism: true`
-         * above already provides the equivalent behaviour, the
-         * legacy property has no runtime effect; it is preserved
-         * only as a stable contract marker.
+         * Vitest 4 migration history (QA Issue 6 — MINOR remediation):
+         * A legacy `poolOptions.threads.singleThread: false` block
+         * was previously retained here as a "stable contract marker"
+         * to satisfy AAP Section 0.7.2's explicit textual mention of
+         * `singleThread: false`. The Vitest 4 runtime emitted a
+         * DEPRECATED warning on every invocation:
          *
-         * The `@ts-expect-error` directive acknowledges that the
-         * Vitest 4 `InlineConfig` type no longer declares
-         * `poolOptions`. The error MUST be present for the directive
-         * to pass type-check, so removing the legacy block here also
-         * requires removing this directive.
+         *     DEPRECATED `test.poolOptions` was removed in Vitest 4.
+         *     All previous `poolOptions` are now top-level options.
+         *
+         * The legacy block had no runtime effect (the top-level
+         * `fileParallelism: true` above already provides the
+         * equivalent behaviour) but produced noisy CI logs on every
+         * `npm run test:*` invocation and risked breakage on any
+         * future Vitest patch that removed the runtime warning path.
+         *
+         * Per QA Final Checkpoint F1 Issue 6 (MINOR), the legacy
+         * block plus its `@ts-expect-error` directive have been
+         * removed. AAP Section 0.7.2's intent — parallel file
+         * execution across threaded workers — is preserved verbatim
+         * by the modern `pool: 'threads'` + `fileParallelism: true`
+         * combination declared above. The semantic equivalence is:
+         *
+         *   Legacy Vitest 3.x:
+         *     pool: 'threads', poolOptions.threads.singleThread = false
+         *   Modern Vitest 4.x:
+         *     pool: 'threads', fileParallelism = true
          */
-        // @ts-expect-error Vitest 4 removed `poolOptions` from the typed
-        // `InlineConfig` shape; the runtime still accepts the legacy
-        // structure with a deprecation warning. Retained per AAP.
-        poolOptions: {
-            threads: {
-                singleThread: false,
-            },
-        },
 
         /*
          * Reporter chain.
@@ -341,9 +338,17 @@ export default defineConfig({
              *   - lines      ≥ 90
              *
              * Per-file gates (path-glob overrides):
-             *   - src/components/sso/** — SSO components are the
-             *     primary surface under test; statements ≥ 95,
+             *   - src/components/sso/** — SSO screen components are
+             *     the primary surface under test; statements ≥ 95,
              *     branches ≥ 90, functions ≥ 95, lines ≥ 95.
+             *   - src/components/ui/**  — design-system primitives
+             *     (Logo, TextInput, Button, SocialProviderButton,
+             *     Separator, Modal) compose the SSO screens and are
+             *     the most directly testable units of the SSO
+             *     surface. AAP Section 0.7.1 default for SSO
+             *     components specifies ≥ 95% across all metrics
+             *     except branches (≥ 90). Restored per QA Final
+             *     Checkpoint F1 Issue 3 (MAJOR).
              *   - src/utils/**          — pure functions are
              *     trivially fully testable; 100% across all metrics.
              *
@@ -366,6 +371,12 @@ export default defineConfig({
                 lines: 90,
                 perFile: false,
                 'src/components/sso/**': {
+                    statements: 95,
+                    branches: 90,
+                    functions: 95,
+                    lines: 95,
+                },
+                'src/components/ui/**': {
                     statements: 95,
                     branches: 90,
                     functions: 95,
