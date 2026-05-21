@@ -203,7 +203,7 @@ describe('Colors — gradient backgrounds (hero panel + Days accent)', () => {
 // SUITE — Social provider button text colour
 // =============================================================================
 
-describe('Colors — social.text (#010101) on provider buttons', () => {
+describe('Colors — social.text (#333333) on provider buttons', () => {
     it('SocialProviderButton text uses social.text', () => {
         render(<SocialProviderButton provider={MICROSOFT_PROVIDER} onActivate={() => undefined} />);
         expectColorToken(

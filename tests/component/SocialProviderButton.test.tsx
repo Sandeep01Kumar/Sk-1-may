@@ -117,7 +117,7 @@ describe('src/components/ui/SocialProviderButton — Microsoft provider', () => 
         expectColorToken(btn, 'background-color', 'social.background');
     });
 
-    it('applies the social text colour (#010101)', () => {
+    it('applies the social text colour (#333333)', () => {
         render(<SocialProviderButton provider={MICROSOFT_PROVIDER} onActivate={() => undefined} />);
         const btn = screen.getByRole('button', { name: /microsoft/i });
         expectColorToken(btn, 'color', 'social.text');

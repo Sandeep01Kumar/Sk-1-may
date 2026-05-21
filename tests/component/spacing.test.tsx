@@ -18,7 +18,7 @@
  *   - 32 px gap inside Login   -> SPACING_TOKENS['login.gap']
  *   - 12 px x 24 px padding on Buttons
  *   - 8 px x 16 px padding on TextInputs
- *   - Modal padding 24 px x/y, modal gap 16 px
+ *   - Modal padding 24 px x/y, modal gap 24 px (Figma layout_ZG5EM5 outer content gap)
  *
  * This file enforces those guarantees at the component layer for every
  * primitive and screen that owns a measurable container.

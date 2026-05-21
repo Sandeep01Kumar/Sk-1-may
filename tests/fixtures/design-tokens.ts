@@ -95,7 +95,7 @@ export const COLOR_TOKENS = {
     'button.secondary.text': '#5B39F3',
     'button.secondary.border': '#5B39F3',
     'social.background': '#F5F5F5',
-    'social.text': '#010101',
+    'social.text': '#333333', // Figma fill_GSRGAO (Sign-in A "Sign in with Microsoft") / fill_I6HSLA (Sign-in B "Continue with Google"); aligns with text.body per AAP Section 0.10.3 Figma-as-source-of-truth
     'modal.background': '#FFFFFF',
 } as const;
 
@@ -372,8 +372,8 @@ export const SPACING_TOKENS = {
     'input.padding.x': '16px',
     'modal.padding.x': '24px',
     'modal.padding.y': '24px',
-    'modal.gap': '16px',
-    'separator.gap': '16px',
+    'modal.gap': '24px', // Figma layout_ZG5EM5 (Link Accounts Modal outer content gap on frames 16383:42232 / 16383:42287)
+    'separator.gap': '8px', // Figma layout_R82RB3 (Sign-in A separator 15001:41911) / layout_ZTI7YM (Sign-in B/C separator 15001:42024)
 } as const;
 
 /**

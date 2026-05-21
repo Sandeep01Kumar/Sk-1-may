@@ -12,7 +12,7 @@
  *   - Sign-in B/C separator    : Figma 15001:42024 ("or sign in with")
  *
  *   Structure: two horizontal lines flanking a centred text node, with
- *   a 16 px gap on each side (SPACING_TOKENS['separator.gap']).
+ *   an 8 px gap on each side (SPACING_TOKENS['separator.gap']).
  *
  * --------------------------------------------------------------------------
  * Test categories covered here
@@ -20,7 +20,7 @@
  *
  *   Happy path:
  *     - Renders the supplied text node centred between two lines.
- *     - 16 px gap on each side of the text per design token.
+ *     - 8 px gap on each side of the text per design token.
  *     - role="separator" with aria-orientation="horizontal" on the
  *       wrapper.
  *
@@ -102,7 +102,7 @@ describe('src/components/ui/Separator — rendering with label', () => {
         expect(allLines.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('applies the separator.gap token (16 px) horizontally around the label', () => {
+    it('applies the separator.gap token (8 px) horizontally around the label', () => {
         const { container } = render(<Separator label="or" />);
         const labelNode = screen.getByText('or');
         // Inspect inline margin or parent's column gap. We accept either
@@ -118,7 +118,7 @@ describe('src/components/ui/Separator — rendering with label', () => {
             expect(wrapper).not.toBeNull();
             if (wrapper !== null) {
                 const gap = getComputedStyle(wrapper).columnGap || getComputedStyle(wrapper).gap;
-                expect(gap).toBe('16px');
+                expect(gap).toBe('8px');
             }
         }
     });
