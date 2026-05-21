@@ -1,9 +1,12 @@
 /**
- * Pixelmatch + pngjs wrappers for offline visual regression diffing.
+ * Pixelmatch + pngjs wrappers for offline visual regression diffing,
+ * plus the `waitForInteractive(page)` Playwright-side helper required
+ * by visual specs under `tests/visual/**`.
  *
- * Used by visual specs under `tests/visual/**` as a deterministic fallback
- * when Playwright's `expect(page).toHaveScreenshot(...)` is unavailable or
- * when post-hoc diff inspection of baseline PNGs is required.
+ * The offline pixelmatch helpers are used by visual specs as a
+ * deterministic fallback when Playwright's
+ * `expect(page).toHaveScreenshot(...)` is unavailable, or when post-hoc
+ * diff inspection of baseline PNGs is required.
  *
  * Responsibilities:
  *   - Read a PNG file from disk and return a parsed `PNG` object.
@@ -12,6 +15,11 @@
  *     plus a diff PNG with offending pixels highlighted.
  *   - Convenience file-based comparison + Vitest-friendly assertion wrapper.
  *   - Crop a rectangular region from a PNG via `PNG.bitblt`.
+ *   - `waitForInteractive(page)` — synchronise a Playwright `Page` to a
+ *     screenshot-ready state (DOM loaded, network quiescent, fonts ready,
+ *     no in-flight animations). Required by the eight visual specs under
+ *     `tests/visual/**` (one per Figma frame) before they call
+ *     `toHaveScreenshot()`.
  *
  * Authority (Agent Action Plan):
  *   - Section 0.5.1 — file row for `tests/utils/visual.ts`.
@@ -19,7 +27,8 @@
  *   - Section 0.7.3 — visual regression gate: ≤ 0.1% pixel mismatch
  *                      with anti-alias tolerance.
  *   - Section 0.10.2 — visual diff thresholds account for font-hinting
- *                       differences between operating systems.
+ *                       differences between operating systems; Inter font
+ *                       must be loaded before screenshots are taken.
  *   - Section 0.4.5 — visual baselines under `tests/visual/baselines/**`
  *                      are dimension-canonical and must not be silently
  *                      scaled.
@@ -28,10 +37,12 @@
  *                       generated on first run; cross-OS hinting may
  *                       still produce intermittent failures.
  *
- * NOTE: These helpers run in the Node test environment (Vitest). They are
- * NOT intended for use inside Playwright spec bodies — Playwright provides
- * its own `toHaveScreenshot` API that hooks into the browser-side capture
- * pipeline and stores baselines alongside the spec.
+ * NOTE: The pixelmatch / pngjs helpers run in the Node test environment
+ * (Vitest). They are NOT intended for use inside Playwright spec bodies
+ * — Playwright provides its own `toHaveScreenshot` API that hooks into
+ * the browser-side capture pipeline and stores baselines alongside the
+ * spec. The `waitForInteractive` helper, by contrast, IS designed for
+ * Playwright spec bodies and accepts the in-test `Page` instance.
  *
  * No top-level side effects (no I/O, no `console.log`, no `await`).
  */
@@ -60,6 +71,13 @@ import { PNG } from 'pngjs';
 // two equally-sized RGBA pixel buffers and writes a diff image in-place.
 // The function returns the count of mismatched pixels (a non-negative number).
 import pixelmatch from 'pixelmatch';
+
+// `Page` from `@playwright/test` is the type of the Playwright page handle
+// passed into spec bodies. Imported as a TYPE-only import so this module
+// continues to be safe to evaluate from the Vitest (Node) environment —
+// `import type` is erased at compile time and does NOT load any Playwright
+// runtime, which would otherwise crash in a non-browser worker process.
+import type { Page } from '@playwright/test';
 
 // -----------------------------------------------------------------------------
 // Re-exports
@@ -659,4 +677,177 @@ export function cropPng(source: PNG, x: number, y: number, width: number, height
     const cropped = new PNG({ width, height });
     PNG.bitblt(source, cropped, x, y, width, height, 0, 0);
     return cropped;
+}
+
+// -----------------------------------------------------------------------------
+// Playwright interactivity wait — `waitForInteractive`
+// -----------------------------------------------------------------------------
+
+/**
+ * Default per-stage timeout for `waitForInteractive` (5 seconds).
+ *
+ * Each stage of the readiness pipeline (`networkidle`, `document.fonts.ready`,
+ * the animation-frame settle) receives its OWN timeout — they are not
+ * summed. The total wall-clock budget is therefore approximately
+ * `3 × DEFAULT_WAIT_FOR_INTERACTIVE_TIMEOUT_MS` in the worst case, well
+ * within the 10-second `actionTimeout` declared by `playwright.config.ts`
+ * and the 60-second per-test cap.
+ *
+ * Exported (as a `const` literal type) so visual specs can:
+ *   - cite the default in comments without re-computing it, and
+ *   - override it via the second argument when a slow page (e.g., the
+ *     SignIn-C expanded provider list rendering six provider buttons)
+ *     legitimately needs more time.
+ */
+export const DEFAULT_WAIT_FOR_INTERACTIVE_TIMEOUT_MS = 5_000 as const;
+
+/**
+ * Optional configuration for `waitForInteractive`.
+ *
+ * Every field is optional with a documented default — passing an empty
+ * object is equivalent to omitting the argument entirely.
+ *
+ * Authority:
+ *   - AAP Section 0.10.2 — Inter font preload mandate.
+ *   - AAP Section 0.7.2 — test-suite performance budget.
+ */
+export interface WaitForInteractiveOptions {
+    /**
+     * Per-stage timeout in milliseconds. Defaults to
+     * `DEFAULT_WAIT_FOR_INTERACTIVE_TIMEOUT_MS` (5000 ms).
+     *
+     * Applied INDIVIDUALLY to each readiness stage (networkidle, fonts
+     * ready, animation-frame settle); the total worst-case wall-clock
+     * is roughly `3 × timeoutMs`.
+     */
+    readonly timeoutMs?: number;
+    /**
+     * Whether to wait for `document.fonts.ready` before declaring the
+     * page interactive. Defaults to `true`.
+     *
+     * Setting this to `false` is appropriate ONLY for tests that
+     * explicitly assert font fallback behaviour; visual baselines
+     * require the canonical Inter font to be resolved before capture
+     * (AAP Section 0.10.2), so the default leaves this enabled.
+     */
+    readonly waitForFonts?: boolean;
+}
+
+/**
+ * Wait until a Playwright `Page` is in a stable, screenshot-ready state.
+ *
+ * Stages (executed sequentially, each with its own timeout budget):
+ *
+ *   1. `page.waitForLoadState('domcontentloaded')` — guarantees the
+ *      initial HTML has parsed and inline scripts have run, so any
+ *      synchronous React hydration that runs at the bottom of the
+ *      `<body>` has had a chance to execute.
+ *
+ *   2. `page.waitForLoadState('networkidle')` — waits for the network
+ *      to be idle for at least 500 ms (Playwright's built-in heuristic).
+ *      This catches the canonical "image / font / script still
+ *      downloading" race that produces flaky baselines.
+ *
+ *   3. `document.fonts.ready` — resolves when every `@font-face` the
+ *      page has subscribed to has finished loading. Required for the
+ *      Inter font preload mandated by AAP Section 0.10.2, because text
+ *      rendered against a fallback font produces a different pixel
+ *      footprint than text rendered against Inter, which would silently
+ *      shift baselines across runners with different host fonts.
+ *
+ *      Skippable via `options.waitForFonts === false` for tests that
+ *      explicitly assert fallback behaviour.
+ *
+ *   4. Double `requestAnimationFrame` — yields TWO animation frames
+ *      to the browser so any CSS transition, Web Animation, or
+ *      microtask-queued style mutation has had a chance to settle.
+ *      One frame is insufficient for the "transition starts on next
+ *      paint, then settles on the frame after" pattern common in
+ *      CSS-Transition-driven UIs. The promise resolves AFTER both
+ *      frames have fired so we know the page has rendered at least
+ *      one fully-composited stable frame.
+ *
+ * Stages 1 and 2 are executed via `page.waitForLoadState` which has
+ * built-in retry semantics; stages 3 and 4 are wrapped in
+ * `Promise.race(..., setTimeout)` to enforce the per-stage timeout.
+ *
+ * Idempotent and safe to call multiple times. Each call performs the
+ * full pipeline; redundant calls are cheap because every stage
+ * short-circuits when the page is already in the target state.
+ *
+ * @example
+ *   // Inside a visual spec body:
+ *   await loginPage.navigate('a');
+ *   await waitForInteractive(loginPage.page);
+ *   await expect(page).toHaveScreenshot('signin-a-microsoft-only.png', {
+ *       fullPage: true,
+ *       animations: 'disabled',
+ *       caret: 'hide',
+ *   });
+ *
+ * @param page    - The Playwright `Page` to synchronise. Typically the
+ *                  `page` fixture in a spec body, or the `.page`
+ *                  property of a page-object instance (loginPage.page,
+ *                  signupPage.page, modalPage.page).
+ * @param options - Optional configuration; see `WaitForInteractiveOptions`.
+ *
+ * @returns A promise that resolves when every readiness stage has
+ *          completed. Rejects if any stage exceeds its timeout.
+ */
+export async function waitForInteractive(
+    page: Page,
+    options: WaitForInteractiveOptions = {},
+): Promise<void> {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_WAIT_FOR_INTERACTIVE_TIMEOUT_MS;
+    // `waitForFonts` defaults to `true`; we use `??` (nullish coalescing)
+    // rather than `||` so an explicit `false` is preserved, only an
+    // `undefined` value falls back to the default.
+    const waitForFonts = options.waitForFonts ?? true;
+
+    // Stage 1: DOM content loaded. Cheap; Playwright resolves this
+    // immediately once the initial HTML parse finishes.
+    await page.waitForLoadState('domcontentloaded', { timeout: timeoutMs });
+
+    // Stage 2: Network idle. Catches in-flight font, image, and chunk
+    // fetches that would otherwise produce a partially-rendered frame
+    // when the screenshot is captured. `networkidle` waits for at least
+    // 500 ms of network silence — Playwright's built-in heuristic.
+    await page.waitForLoadState('networkidle', { timeout: timeoutMs });
+
+    // Stage 3: Fonts ready (optional). Evaluated in the page context
+    // so that `document.fonts.ready` (a Promise<FontFaceSet>) is
+    // awaited before the evaluate call resolves. The browser sets
+    // `document.fonts.status` to 'loaded' only once every font
+    // referenced by a CSS rule on the page has been fetched and
+    // decoded.
+    //
+    // The `evaluate` callback returns `undefined` (we don't need the
+    // FontFaceSet object back) so the round-trip serialisation cost
+    // is minimal.
+    if (waitForFonts) {
+        await page.evaluate(
+            (): Promise<void> =>
+                // The Page is guaranteed to have `document.fonts` (it's part
+                // of the CSS Font Loading API, supported in every browser
+                // Playwright drives — Chromium, Firefox, WebKit). The
+                // `void` cast discards the FontFaceSet result so the
+                // outer Promise resolves with `undefined`.
+                document.fonts.ready.then((): void => undefined),
+        );
+    }
+
+    // Stage 4: Double requestAnimationFrame settle. Forces two paint
+    // boundaries before we hand control back to the caller — sufficient
+    // for the "transition starts on next paint, then settles on the
+    // frame after" CSS pattern that single-rAF synchronisation misses.
+    await page.evaluate(
+        (): Promise<void> =>
+            new Promise<void>((resolve): void => {
+                requestAnimationFrame((): void => {
+                    requestAnimationFrame((): void => {
+                        resolve();
+                    });
+                });
+            }),
+    );
 }

@@ -131,6 +131,27 @@ export default defineConfig({
     // single-line append rather than a glob refactor.
     testMatch: ['e2e/**/*.spec.ts', 'visual/**/*.spec.ts'],
 
+    // ----------------------------------------------------------------------
+    // TypeScript configuration (path-alias resolution)
+    // ----------------------------------------------------------------------
+    //
+    // Playwright transpiles spec files via its built-in esbuild loader
+    // rather than `tsc`. The loader consults a tsconfig for compilerOptions
+    // — most importantly the `paths` map — when resolving non-relative
+    // imports. By default Playwright searches for `tsconfig.json` next to
+    // each test file's nearest project root, which would resolve the
+    // root `tsconfig.json` (no `@tests/*` alias) instead of
+    // `tsconfig.test.json` (which DOES declare `@tests/*` → `./tests/*`).
+    //
+    // Pointing the loader at `tsconfig.test.json` ensures spec files can
+    // import from `@tests/setup/playwright`, `@tests/utils/visual`, etc.,
+    // exactly as the test-suite convention dictates (AAP Section 0.6.2).
+    //
+    // The path is resolved relative to this config file at config-load
+    // time; passing a bare basename keeps the declaration portable across
+    // checkouts that may differ in their workspace layout.
+    tsconfig: './tsconfig.test.json',
+
     // -----------------------------------------------------------------------
     // Timeouts
     // -----------------------------------------------------------------------
