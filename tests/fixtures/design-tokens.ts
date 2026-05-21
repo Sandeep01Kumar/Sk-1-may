@@ -215,24 +215,58 @@ export const FONT_WEIGHT_TOKENS = {
 export type FontWeightTokenKey = keyof typeof FONT_WEIGHT_TOKENS;
 
 /**
- * Line heights captured from Figma text-style tokens.
+ * Line heights captured VERBATIM from Figma text-style tokens.
  *
  * Stored as CSS `line-height` strings (px values). The helper in
- * tests/utils/tokens.ts may also accept unitless ratios. Conventions:
- *   - Headings (hero, h1.signin, h5, button.large): 1.2x ratio.
- *   - Body / small / xs: 1.5x ratio.
+ * tests/utils/tokens.ts may also accept unitless ratios.
  *
- * The 1.2 / 1.5 ratios are industry-standard typographic conventions
- * and match what Figma exports for Inter text styles in this file.
+ * Values sourced directly from Figma file `2qR7NSTmQLynkmlj9B4ltc`
+ * via `get_figma_data` queries against the relevant text-style nodes:
+ *
+ *   - hero         : `style_GLKS5S` — Figma `lineHeight: 85%`
+ *                    -> 85% × 62.78px = 53.36px
+ *                    (node 15001:41878 — marketing-panel headline)
+ *   - h1.signin    : `style_WD906P` — Figma `lineHeight: 100%`
+ *                    -> 100% × 32px = 32px
+ *                    (node 15001:41892 — Sign-in heading)
+ *   - h5           : Figma `Heading/Desktop/H5` — `lineHeight: 130%`
+ *                    -> 130% × 24px = 31.2px
+ *                    (node 16383:42232 — Link Accounts Modal H5)
+ *   - button.large : Figma `Button/Large` — `lineHeight: 28px`
+ *                    -> 28px verbatim (NOT a ratio)
+ *                    (node 15001:41974 — primary button label)
+ *   - body         : Figma body text-style — `lineHeight: 150%`
+ *                    -> 150% × 16px = 24px
+ *                    (default body copy; matches the 1.5 ratio that
+ *                    is by coincidence both the industry-standard and
+ *                    the Figma-declared value for 16px body type)
+ *   - small        : Figma small text — `lineHeight: 150%`
+ *                    -> 150% × 14px = 21px (matches 1.5 ratio)
+ *   - xs           : Figma legalese — `lineHeight: 150%`
+ *                    -> 150% × 12px = 18px (matches 1.5 ratio)
+ *
+ * Per AAP Section 0.10.2 ("Visual parity with the Figma file is the
+ * source of truth"), these values are the LITERAL Figma exports for
+ * the listed text styles — they are NOT industry-standard 1.2/1.5
+ * ratios applied uniformly. Any future drift requires re-running
+ * `get_figma_data` against the source frame to recapture the value.
+ *
+ * Authority:
+ *   - AAP Section 0.10.2 (Figma source-of-truth mandate).
+ *   - AAP Section 0.10.3 (Figma-specific testing requirements —
+ *     verbatim tokens).
+ *   - QA finding Issue 12 (line-height tokens diverge from Figma) —
+ *     this revision aligns the fixture with the Figma authoritative
+ *     values per option (a) of the suggested fix.
  */
 export const LINE_HEIGHT_TOKENS = {
-    hero: '75.34px', // 1.2 ratio of 62.78px
-    'h1.signin': '38.4px', // 1.2 ratio of 32px
-    h5: '28.8px', // 1.2 ratio of 24px
-    'button.large': '21.6px', // 1.2 ratio of 18px
-    body: '24px', // 1.5 ratio of 16px
-    small: '21px', // 1.5 ratio of 14px
-    xs: '18px', // 1.5 ratio of 12px
+    hero: '53.36px', // Figma 85% × 62.78px (style_GLKS5S, node 15001:41878)
+    'h1.signin': '32px', // Figma 100% × 32px (style_WD906P, node 15001:41892)
+    h5: '31.2px', // Figma 130% × 24px (Heading/Desktop/H5, node 16383:42232)
+    'button.large': '28px', // Figma 28px verbatim (Button/Large, node 15001:41974)
+    body: '24px', // Figma 150% × 16px
+    small: '21px', // Figma 150% × 14px
+    xs: '18px', // Figma 150% × 12px
 } as const;
 
 /**
@@ -241,28 +275,43 @@ export const LINE_HEIGHT_TOKENS = {
 export type LineHeightTokenKey = keyof typeof LINE_HEIGHT_TOKENS;
 
 /**
- * Letter spacing values captured from Figma text-style tokens.
+ * Letter spacing values captured VERBATIM from Figma text-style tokens.
  *
  * Figma exports tracking as a percentage; CSS uses px. The values below
- * are the px equivalents at the corresponding font size:
+ * are the px equivalents at the corresponding font size, sourced
+ * directly from `get_figma_data` queries against the relevant
+ * text-style nodes in file `2qR7NSTmQLynkmlj9B4ltc`:
  *
- *   hero       : -0.628px = -1% of 62.78px (slight negative tracking
- *                                           tightens hero display type)
- *   h1.signin  : -0.32px  = -1% of 32px    (matches Figma "tracking -1%")
- *   h5         : 0px      = default tracking
- *   button.*   : 0px      = default tracking
- *   body / s   : 0px      = default tracking
+ *   hero       : -2.51px  = -4% of 62.78px
+ *                Figma `style_GLKS5S` letterSpacing: -4%
+ *                (node 15001:41878 — marketing-panel headline)
+ *   h1.signin  : -0.64px  = -2% of 32px
+ *                Figma `style_WD906P` letterSpacing: -2%
+ *                (node 15001:41892 — Sign-in heading)
+ *   h5         : 0px      = default tracking (no Figma letterSpacing set)
+ *   button.*   : 0px      = default tracking (no Figma letterSpacing set)
+ *   body       : -0.30px  = -1.88% of 16px
+ *                Figma body text-style letterSpacing: -1.88%
+ *                (default body copy)
+ *   small      : 0px      = default tracking
+ *   xs         : 0px      = default tracking
  *
  * If the implementation chooses to express letter-spacing in `em` units
- * (e.g., `letter-spacing: -0.01em`), the helper in tests/utils/tokens.ts
+ * (e.g., `letter-spacing: -0.04em`), the helper in tests/utils/tokens.ts
  * must convert before comparing.
+ *
+ * Per AAP Section 0.10.2 ("Visual parity with the Figma file is the
+ * source of truth"), these values are the LITERAL Figma exports for
+ * the listed text styles. Per QA finding Issue 12, these tokens were
+ * previously stored as -1% approximations and have been updated to
+ * the actual Figma values per option (a) of the suggested fix.
  */
 export const LETTER_SPACING_TOKENS = {
-    hero: '-0.628px', // -1% of 62.78px
-    'h1.signin': '-0.32px', // -1% of 32px
+    hero: '-2.51px', // Figma -4% × 62.78px (style_GLKS5S, node 15001:41878)
+    'h1.signin': '-0.64px', // Figma -2% × 32px (style_WD906P, node 15001:41892)
     h5: '0px',
     'button.large': '0px',
-    body: '0px',
+    body: '-0.30px', // Figma -1.88% × 16px (body text-style)
     small: '0px',
     xs: '0px',
 } as const;
