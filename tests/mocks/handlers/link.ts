@@ -157,7 +157,10 @@ function buildLinkAccountsHandler(prefix: string, outcome: LinkAccountsOutcome):
  * @returns A tuple of two handlers — relative then absolute.
  */
 function buildDualUrlLinkAccountsHandlers(outcome: LinkAccountsOutcome): readonly HttpHandler[] {
-    return [buildLinkAccountsHandler('', outcome), buildLinkAccountsHandler(TEST_APP_ORIGIN, outcome)];
+    return [
+        buildLinkAccountsHandler('', outcome),
+        buildLinkAccountsHandler(TEST_APP_ORIGIN, outcome),
+    ];
 }
 
 // =============================================================================
@@ -174,7 +177,8 @@ function buildDualUrlLinkAccountsHandlers(outcome: LinkAccountsOutcome): readonl
  * message). Tests that need a different variant call
  * `activateLinkAccountsHandler(server, 'invalidPassword' | 'conflict' | 'validationError')`.
  */
-export const linkAccountsHandlers: readonly HttpHandler[] = buildDualUrlLinkAccountsHandlers('success');
+export const linkAccountsHandlers: readonly HttpHandler[] =
+    buildDualUrlLinkAccountsHandlers('success');
 
 // =============================================================================
 // ACTIVATE HELPER (QA Issue 11 resolution)

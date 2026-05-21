@@ -239,7 +239,14 @@ function buildMockAuthorizeRedirect(provider: OAuthProviderConfig): string {
 function decideOAuthCallbackResponse(
     body: OAuthCallbackRequestBody,
     provider: 'microsoft' | 'google',
-): readonly [number, AuthSuccessResponse | AuthErrorResponse | { readonly error: string; readonly error_description: string }] {
+): readonly [
+    number,
+    (
+        | AuthSuccessResponse
+        | AuthErrorResponse
+        | { readonly error: string; readonly error_description: string }
+    ),
+] {
     const state = body.state ?? '';
     const code = body.code ?? '';
 
@@ -325,9 +332,7 @@ function buildAuthHandlers(prefix: string): readonly HttpHandler[] {
             );
         }),
         http.post(`${prefix}${OAUTH_ENDPOINTS.microsoft.callback}`, async ({ request }) => {
-            const body = (await request
-                .json()
-                .catch(() => ({}))) as OAuthCallbackRequestBody;
+            const body = (await request.json().catch(() => ({}))) as OAuthCallbackRequestBody;
             const [status, json] = decideOAuthCallbackResponse(body, 'microsoft');
             return HttpResponse.json(json, { status });
         }),
@@ -343,9 +348,7 @@ function buildAuthHandlers(prefix: string): readonly HttpHandler[] {
             );
         }),
         http.post(`${prefix}${OAUTH_ENDPOINTS.google.callback}`, async ({ request }) => {
-            const body = (await request
-                .json()
-                .catch(() => ({}))) as OAuthCallbackRequestBody;
+            const body = (await request.json().catch(() => ({}))) as OAuthCallbackRequestBody;
             const [status, json] = decideOAuthCallbackResponse(body, 'google');
             return HttpResponse.json(json, { status });
         }),

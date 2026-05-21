@@ -213,7 +213,9 @@ function buildForgotPasswordHandler(prefix: string, outcome: ForgotPasswordOutco
             case 'rateLimited': {
                 return HttpResponse.json(FORGOT_PASSWORD_RATE_LIMITED, {
                     status: 429,
-                    headers: { 'Retry-After': String(FORGOT_PASSWORD_RATE_LIMITED.retryAfterSeconds) },
+                    headers: {
+                        'Retry-After': String(FORGOT_PASSWORD_RATE_LIMITED.retryAfterSeconds),
+                    },
                 });
             }
             case 'notFound': {
@@ -233,8 +235,13 @@ function buildForgotPasswordHandler(prefix: string, outcome: ForgotPasswordOutco
 /**
  * Build BOTH relative and absolute handlers for a single outcome.
  */
-function buildDualUrlForgotPasswordHandlers(outcome: ForgotPasswordOutcome): readonly HttpHandler[] {
-    return [buildForgotPasswordHandler('', outcome), buildForgotPasswordHandler(TEST_APP_ORIGIN, outcome)];
+function buildDualUrlForgotPasswordHandlers(
+    outcome: ForgotPasswordOutcome,
+): readonly HttpHandler[] {
+    return [
+        buildForgotPasswordHandler('', outcome),
+        buildForgotPasswordHandler(TEST_APP_ORIGIN, outcome),
+    ];
 }
 
 // =============================================================================
@@ -245,7 +252,8 @@ function buildDualUrlForgotPasswordHandlers(outcome: ForgotPasswordOutcome): rea
  * Default forgot-password handlers — registered with the MSW server at
  * module load time and serve the `success` outcome for happy-path tests.
  */
-export const passwordHandlers: readonly HttpHandler[] = buildDualUrlForgotPasswordHandlers('success');
+export const passwordHandlers: readonly HttpHandler[] =
+    buildDualUrlForgotPasswordHandlers('success');
 
 // =============================================================================
 // ACTIVATE HELPER

@@ -172,7 +172,8 @@ export function normalizeColor(raw: string): RgbaTuple {
             const r = Number.parseInt(hex.charAt(0) + hex.charAt(0), 16);
             const g = Number.parseInt(hex.charAt(1) + hex.charAt(1), 16);
             const b = Number.parseInt(hex.charAt(2) + hex.charAt(2), 16);
-            const a = hex.length === 4 ? Number.parseInt(hex.charAt(3) + hex.charAt(3), 16) / 255 : 1;
+            const a =
+                hex.length === 4 ? Number.parseInt(hex.charAt(3) + hex.charAt(3), 16) / 255 : 1;
             return { r, g, b, a };
         }
         if (hex.length === 6 || hex.length === 8) {
@@ -254,11 +255,7 @@ function rgbaEquals(a: RgbaTuple, b: RgbaTuple): boolean {
  *   expectColorToken(button, 'background-color', 'brand.primary');
  *   expectColorToken(input, 'border-color', 'border.default');
  */
-export function expectColorToken(
-    element: Element,
-    property: string,
-    key: ColorTokenKey,
-): void {
+export function expectColorToken(element: Element, property: string, key: ColorTokenKey): void {
     const expectedRaw = COLOR_TOKENS[key];
     const expected = normalizeColor(expectedRaw);
     const actualRaw = getComputedTokenValue(element, property);
@@ -504,10 +501,7 @@ export function expectLineHeightToken(element: Element, key: LineHeightTokenKey)
  * @example
  *   expectLetterSpacingToken(heading, 'hero');
  */
-export function expectLetterSpacingToken(
-    element: Element,
-    key: LetterSpacingTokenKey,
-): void {
+export function expectLetterSpacingToken(element: Element, key: LetterSpacingTokenKey): void {
     const expectedRaw = LETTER_SPACING_TOKENS[key];
     const rawComputed = getComputedTokenValue(element, 'letter-spacing');
     // CSS spec: `letter-spacing: normal` is equivalent to `0px`.
@@ -554,11 +548,7 @@ export function expectFontFamily(element: Element): void {
  *   expectSpacingToken(form, 'gap', 'form.gap');
  *   expectSpacingToken(button, 'padding-top', 'button.padding.y');
  */
-export function expectSpacingToken(
-    element: Element,
-    property: string,
-    key: SpacingTokenKey,
-): void {
+export function expectSpacingToken(element: Element, property: string, key: SpacingTokenKey): void {
     const expectedRaw = SPACING_TOKENS[key];
     const actualRaw = getComputedTokenValue(element, property);
     expectPxEqual(actualRaw, expectedRaw, `${property} for token "${key}"`);

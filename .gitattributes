@@ -1,0 +1,161 @@
+# =============================================================================
+# .gitattributes — Cross-platform line-ending normalization
+# =============================================================================
+#
+# Purpose
+# -------
+# This file makes the repository's text-file line-ending behaviour
+# deterministic across Windows, macOS, and Linux working copies. Without
+# it, Git falls back to the user-specific `core.autocrlf` setting which
+# defaults to `true` on Git for Windows and rewrites every text file to
+# CRLF on checkout. The `.prettierrc.json` declares `"endOfLine": "lf"`,
+# so any CRLF working-tree file fails the `npm run format:check` quality
+# gate (AAP §0.7.3) the moment a Windows contributor runs it.
+#
+# This file is the QA Final Checkpoint F1 Issue 2 (MAJOR) remediation.
+# Before it existed, eleven test-infrastructure source files had been
+# checked out with CRLF endings on Windows, causing the format gate to
+# fail with no obvious user-facing cause:
+#
+#   tests/fixtures/design-tokens.ts
+#   tests/mocks/browser.ts
+#   tests/mocks/handlers/auth.ts
+#   tests/mocks/handlers/index.ts
+#   tests/mocks/handlers/link.ts
+#   tests/mocks/handlers/password.ts
+#   tests/mocks/server.ts
+#   tests/setup/component.ts
+#   tests/setup/playwright.ts
+#   tests/utils/oauth-stub.ts
+#   tests/utils/tokens.ts
+#
+# Cross-references
+# ----------------
+#   - AAP §0.7.3 — Prettier conformance is a quality gate.
+#   - `.prettierrc.json` — declares `"endOfLine": "lf"`.
+#   - QA Final Checkpoint F1 Issue 2 (MAJOR) — Windows-only failure
+#     caused by missing `.gitattributes`.
+#
+# How Git interprets these patterns
+# ---------------------------------
+# `text=auto` tells Git to detect whether a file is text by content
+# sniffing; for files Git classifies as text, the `eol=lf` directive
+# normalises stored bytes to LF in the index AND forces a LF working-copy
+# representation on checkout regardless of `core.autocrlf`. Binary files
+# (`binary` shorthand expands to `-text -diff`) are exempt from any line-
+# ending conversion — critical for PNG baselines and provider logos.
+
+# -----------------------------------------------------------------------------
+# Default: all files treated as text with LF in both index and working tree.
+# -----------------------------------------------------------------------------
+* text=auto eol=lf
+
+# -----------------------------------------------------------------------------
+# Source code (explicit pins for clarity even though `* text=auto` covers them)
+# -----------------------------------------------------------------------------
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.mjs       text eol=lf
+*.cjs       text eol=lf
+*.json      text eol=lf
+*.jsonc     text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.toml      text eol=lf
+*.html      text eol=lf
+*.css       text eol=lf
+*.scss      text eol=lf
+*.svg       text eol=lf
+
+# -----------------------------------------------------------------------------
+# Frozen artefacts — per AAP §0.10.4 "Do not touch!" directive in README.md.
+# These files MUST NOT be modified by any tooling, including line-ending
+# normalisation. Pinning them as `text eol=lf` ensures consistency on
+# checkout but the file BYTES (the actual content) are never rewritten by
+# the conversion because their stored representation in the index is
+# already LF (verified via `git ls-files --eol`).
+# -----------------------------------------------------------------------------
+server.js   text eol=lf
+README.md   text eol=lf
+
+# -----------------------------------------------------------------------------
+# Configuration files that are LF-only by convention
+# -----------------------------------------------------------------------------
+.gitignore       text eol=lf
+.gitattributes   text eol=lf
+.npmrc           text eol=lf
+.eslintrc.cjs    text eol=lf
+.prettierrc.json text eol=lf
+.prettierignore  text eol=lf
+
+# -----------------------------------------------------------------------------
+# Lockfiles — auto-generated; LF for diff stability
+# -----------------------------------------------------------------------------
+package-lock.json   text eol=lf
+yarn.lock           text eol=lf
+pnpm-lock.yaml      text eol=lf
+
+# -----------------------------------------------------------------------------
+# Binary assets — exempt from line-ending conversion and diff display.
+# Visual baselines and provider/brand logos (PNG + GIF) under
+# `tests/visual/baselines/**` and `src/assets/**` must never be subject
+# to text conversion or their bytes would be corrupted.
+# -----------------------------------------------------------------------------
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.bmp   binary
+*.webp  binary
+*.tiff  binary
+*.tif   binary
+
+# -----------------------------------------------------------------------------
+# Font assets — bundled as binary; do not convert
+# -----------------------------------------------------------------------------
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.eot    binary
+
+# -----------------------------------------------------------------------------
+# Archive and compressed formats — binary
+# -----------------------------------------------------------------------------
+*.zip  binary
+*.tar  binary
+*.gz   binary
+*.tgz  binary
+*.bz2  binary
+*.7z   binary
+*.rar  binary
+
+# -----------------------------------------------------------------------------
+# Misc binary documents
+# -----------------------------------------------------------------------------
+*.pdf  binary
+*.psd  binary
+*.ai   binary
+*.sketch binary
+*.fig  binary
+
+# -----------------------------------------------------------------------------
+# Specific path overrides — visual baselines and brand assets are binary
+# regardless of any future ambiguous extension. Belt-and-suspenders
+# coverage for the AAP §0.4.5 asset inventory.
+# -----------------------------------------------------------------------------
+tests/visual/baselines/**  binary
+src/assets/logos/**.png    binary
+src/assets/logos/**.jpg    binary
+
+# -----------------------------------------------------------------------------
+# Linguist hints — exclude generated/vendored content from GitHub language
+# statistics. Optional, but keeps the repository's primary language
+# (TypeScript) accurate on the GitHub home page.
+# -----------------------------------------------------------------------------
+package-lock.json     linguist-generated=true
+tests/visual/baselines/** linguist-vendored=true

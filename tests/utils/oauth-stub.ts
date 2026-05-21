@@ -240,10 +240,7 @@ export function getOAuthPopupCalls(): WindowOpenCall[] {
  *   await user.click(microsoftButton);
  *   expectOAuthAuthorizeCalled('microsoft');
  */
-export function expectOAuthAuthorizeCalled(
-    provider: OAuthProviderId,
-    times: number = 1,
-): void {
+export function expectOAuthAuthorizeCalled(provider: OAuthProviderId, times: number = 1): void {
     const calls = getProviderPopupCalls(provider);
     expect(
         calls.length === times,
