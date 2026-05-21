@@ -1,7 +1,13 @@
 {
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "types": ["vitest/globals", "@testing-library/jest-dom", "@playwright/test", "node"],
+        "types": [
+            "vitest/globals",
+            "@testing-library/jest-dom",
+            "@playwright/test",
+            "node",
+            "vite/client"
+        ],
         "paths": {
             "@/*": ["./src/*"],
             "@tests/*": ["./tests/*"]
